@@ -1,0 +1,7 @@
+error: invalid argument
+ --> tests/ui/err/has-no-argument.rs:1:1
+  |
+1 | #[logfn::logfn]
+  | ^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `logfn::logfn` (in Nightly builds, run with -Z macro-backtrace for more info)

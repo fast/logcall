@@ -1,0 +1,7 @@
+error: too many arguments
+ --> tests/ui/err/has-too-many-arguments.rs:1:1
+  |
+1 | #[logfn::logfn("info", "error")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `logfn::logfn` (in Nightly builds, run with -Z macro-backtrace for more info)
