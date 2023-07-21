@@ -32,7 +32,7 @@ impl Args {
             abort_call_site!("too many arguments");
         }
 
-        let level = if let Some(NestedMeta::Lit(Lit::Str(s))) = input.iter().next() {
+        let level = if let Some(NestedMeta::Lit(Lit::Str(s))) = input.first() {
             s.value()
         } else {
             abort_call_site!("invalid argument");
