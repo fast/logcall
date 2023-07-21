@@ -1,9 +1,9 @@
 [package]
-name = "logfn"
+name = "logcall"
 version = "0.1.0"
 edition = "2021"
 authors = ["andylokandy <andylokandy@hotmail.com>"]
-description = "An attribute macro that logs the return values of functions."
+description = "An attribute macro that logs the return values from function calls."
 repository = "https://github.com/andylokandy/logfn"
 documentation = "https://docs.rs/logfn"
 categories = ["development-tools::debugging"]
@@ -32,3 +32,4 @@ trybuild = "1"
 log = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 env_logger = "0.10.0"
+async-trait = "0.1.70"

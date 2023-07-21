@@ -1,13 +1,13 @@
-# logfn
+# logcall
 
-An attribute macro that logs the return values of functions.
+An attribute macro that logs the return values from function calls.
 
 This is a reimplementation of the [`log-derive`](https://crates.io/crates/log-derive) crate with [`async-trait`](https://crates.io/crates/async-trait) compatibility.
 
 ## Usage
 
 ```rust
-#[logfn::logfn("info")]
+#[logcall::logcall("info")]
 fn foo(a: usize) -> usize {
     a + 1
 }

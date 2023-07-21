@@ -1,4 +1,4 @@
-#[logfn::logfn("info")]
+#[logcall::logcall("info")]
 struct S;
 
 fn main() {}

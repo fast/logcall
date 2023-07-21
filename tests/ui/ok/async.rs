@@ -1,4 +1,4 @@
-#[logfn::logfn("info")]
+#[logcall::logcall("info")]
 async fn f(a: u32) -> u32 {
     a
 }

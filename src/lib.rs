@@ -45,7 +45,7 @@ impl Args {
 /// An attribute macro that logs the return values of functions.
 #[proc_macro_attribute]
 #[proc_macro_error]
-pub fn logfn(
+pub fn logcall(
     args: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
@@ -73,7 +73,7 @@ pub fn logfn(
                     gen_block(&async_expr.block, true, &input.sig.ident.to_string(), args);
                 let async_attrs = &async_expr.attrs;
                 quote! {
-                    Box::pin(#(#async_attrs) * { #instrumented_block })
+                    Box::pin(#(#async_attrs) * #instrumented_block )
                 }
             }
         }

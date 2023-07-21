@@ -1,7 +1,7 @@
 error: unknown log level
  --> tests/ui/err/wrong-level.rs:1:1
   |
-1 | #[logfn::logfn("foo")]
-  | ^^^^^^^^^^^^^^^^^^^^^^
+1 | #[logcall::logcall("foo")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^
   |
-  = note: this error originates in the attribute macro `logfn::logfn` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the attribute macro `logcall::logcall` (in Nightly builds, run with -Z macro-backtrace for more info)

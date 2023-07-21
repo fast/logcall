@@ -1,4 +1,4 @@
-#[logfn::logfn("foo")]
+#[logcall::logcall("foo")]
 fn f() {}
 
 fn main() {}

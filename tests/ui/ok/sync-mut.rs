@@ -1,4 +1,4 @@
-#[logfn::logfn("info")]
+#[logcall::logcall("info")]
 fn f(mut a: u32) -> u32 {
     a += 1;
     a

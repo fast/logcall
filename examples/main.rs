@@ -1,4 +1,4 @@
-#[logfn::logfn("info")]
+#[logcall::logcall("info")]
 fn foo(a: usize) -> usize {
     a + 1
 }
