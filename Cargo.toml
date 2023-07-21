@@ -1,6 +1,6 @@
 [package]
 name = "logcall"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["andylokandy <andylokandy@hotmail.com>"]
 description = "An attribute macro that logs the return value from function call."
