@@ -14,4 +14,4 @@ impl MyTrait for MyStruct {
     }
 }
 
-fn main() { }
+fn main() {}
