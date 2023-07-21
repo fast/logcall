@@ -194,14 +194,14 @@ fn transform_sig(sig: &mut Signature, has_self: bool, is_local: bool) {
                 let span = param.span();
                 where_clause_or_default(&mut sig.generics.where_clause)
                     .predicates
-                    .push(parse_quote_spanned!(span=> #param: 'minitrace));
+                    .push(parse_quote_spanned!(span=> #param: 'logcall));
             }
             GenericParam::Lifetime(param) => {
                 let param = &param.lifetime;
                 let span = param.span();
                 where_clause_or_default(&mut sig.generics.where_clause)
                     .predicates
-                    .push(parse_quote_spanned!(span=> #param: 'minitrace));
+                    .push(parse_quote_spanned!(span=> #param: 'logcall));
             }
             GenericParam::Const(_) => {}
         }
@@ -218,12 +218,12 @@ fn transform_sig(sig: &mut Signature, has_self: bool, is_local: bool) {
         sig.generics.params.insert(idx, parse_quote!(#elided));
         where_clause_or_default(&mut sig.generics.where_clause)
             .predicates
-            .push(parse_quote_spanned!(elided.span()=> #elided: 'minitrace));
+            .push(parse_quote_spanned!(elided.span()=> #elided: 'logcall));
     }
 
     sig.generics
         .params
-        .insert(0, parse_quote_spanned!(default_span=> 'minitrace));
+        .insert(0, parse_quote_spanned!(default_span=> 'logcall));
 
     if has_self {
         let bound_span = sig.ident.span();
@@ -248,9 +248,9 @@ fn transform_sig(sig: &mut Signature, has_self: bool, is_local: bool) {
 
         let where_clause = where_clause_or_default(&mut sig.generics.where_clause);
         where_clause.predicates.push(if is_local {
-            parse_quote_spanned!(bound_span=> Self: 'minitrace)
+            parse_quote_spanned!(bound_span=> Self: 'logcall)
         } else {
-            parse_quote_spanned!(bound_span=> Self: ::core::marker::#bound + 'minitrace)
+            parse_quote_spanned!(bound_span=> Self: ::core::marker::#bound + 'logcall)
         });
     }
 
@@ -275,9 +275,9 @@ fn transform_sig(sig: &mut Signature, has_self: bool, is_local: bool) {
 
     let ret_span = sig.ident.span();
     let bounds = if is_local {
-        quote_spanned!(ret_span=> 'minitrace)
+        quote_spanned!(ret_span=> 'logcall)
     } else {
-        quote_spanned!(ret_span=> ::core::marker::Send + 'minitrace)
+        quote_spanned!(ret_span=> ::core::marker::Send + 'logcall)
     };
     sig.output = parse_quote_spanned! {ret_span=>
         -> impl ::core::future::Future<Output = #ret> + #bounds
