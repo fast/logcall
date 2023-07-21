@@ -7,7 +7,9 @@ This is a reimplementation of the [`log-derive`](https://crates.io/crates/log-de
 ## Usage
 
 ```rust
-#[logcall::logcall("info")]
+use logcall::logcall;
+
+#[logcall("info")]
 fn foo(a: usize) -> usize {
     a + 1
 }
