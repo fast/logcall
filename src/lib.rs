@@ -165,19 +165,19 @@ fn gen_block(
     args: Args,
 ) -> proc_macro2::TokenStream {
     match args {
-        Args::Simple { level } =>  {
+        Args::Simple { level } => {
             // Generate the instrumented function body.
             // If the function is an `async fn`, this will wrap it in an async block.
             if async_context {
                 let log = gen_log(&level, fn_name, "__ret_value");
                 let block = quote_spanned!(block.span()=>
                     async move {
-                        let __ret_value = #block;
+                        let __ret_value = async move { #block }.await;
                         #log;
                         __ret_value
                     }
                 );
-        
+
                 if async_keyword {
                     quote_spanned!(block.span()=>
                         #block.await
@@ -188,13 +188,16 @@ fn gen_block(
             } else {
                 let log = gen_log(&level, fn_name, "__ret_value");
                 quote_spanned!(block.span()=>
-                    let __ret_value = #block;
+                    let __ret_value = (move || #block)();
                     #log;
                     __ret_value
                 )
             }
         }
-        Args::Result { ok_level, err_level } => {
+        Args::Result {
+            ok_level,
+            err_level,
+        } => {
             let ok_arm = if let Some(ok_level) = ok_level {
                 let log_ok = gen_log(&ok_level, fn_name, "__ret_value");
                 quote_spanned!(block.span()=>
@@ -221,20 +224,20 @@ fn gen_block(
                     Err(__ret_value) => Err(__ret_value),
                 )
             };
-            
+
             // Generate the instrumented function body.
             // If the function is an `async fn`, this will wrap it in an async block.
             if async_context {
                 let block = quote_spanned!(block.span()=>
                     async move {
-                        let __ret_value = #block;
+                        let __ret_value = async move { #block }.await;
                         match __ret_value {
                             #ok_arm
                             #err_arm
                         }
                     }
                 );
-        
+
                 if async_keyword {
                     quote_spanned!(block.span()=>
                         #block.await
@@ -244,7 +247,7 @@ fn gen_block(
                 }
             } else {
                 quote_spanned!(block.span()=>
-                    let __ret_value = #block;
+                    let __ret_value = (move || #block)();
                     match __ret_value {
                         #ok_arm
                         #err_arm
