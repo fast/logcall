@@ -1,4 +1,4 @@
-error: too many arguments
+error: invalid arguments
  --> tests/ui/err/has-too-many-arguments.rs:1:1
   |
 1 | #[logcall::logcall("info", "error")]

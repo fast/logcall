@@ -17,23 +17,60 @@ use syn::spanned::Spanned;
 use syn::Ident;
 use syn::*;
 
-struct Args {
-    level: String,
+enum Args {
+    Simple {
+        level: String,
+    },
+    Result {
+        ok_level: Option<String>,
+        err_level: Option<String>,
+    },
 }
 
 impl Args {
     fn parse(input: AttributeArgs) -> Args {
-        if input.len() > 1 {
-            abort_call_site!("too many arguments");
+        match input.as_slice() {
+            [NestedMeta::Lit(Lit::Str(s))] => Args::Simple { level: s.value() },
+            [NestedMeta::Meta(Meta::NameValue(MetaNameValue {
+                path,
+                lit: Lit::Str(s),
+                ..
+            }))] if path.is_ident("ok") => Args::Result {
+                ok_level: Some(s.value()),
+                err_level: None,
+            },
+            [NestedMeta::Meta(Meta::NameValue(MetaNameValue {
+                path,
+                lit: Lit::Str(s),
+                ..
+            }))] if path.is_ident("err") => Args::Result {
+                ok_level: None,
+                err_level: Some(s.value()),
+            },
+            [NestedMeta::Meta(Meta::NameValue(MetaNameValue {
+                path,
+                lit: Lit::Str(s),
+                ..
+            })), NestedMeta::Meta(Meta::NameValue(MetaNameValue {
+                path: path2,
+                lit: Lit::Str(s2),
+                ..
+            }))]
+            | [NestedMeta::Meta(Meta::NameValue(MetaNameValue {
+                path: path2,
+                lit: Lit::Str(s2),
+                ..
+            })), NestedMeta::Meta(Meta::NameValue(MetaNameValue {
+                path,
+                lit: Lit::Str(s),
+                ..
+            }))] if path.is_ident("ok") && path2.is_ident("err") => Args::Result {
+                ok_level: Some(s.value()),
+                err_level: Some(s2.value()),
+            },
+            [] => abort_call_site!("missing arguments"),
+            _ => abort_call_site!("invalid arguments"),
         }
-
-        let level = if let Some(NestedMeta::Lit(Lit::Str(s))) = input.first() {
-            s.value()
-        } else {
-            abort_call_site!("invalid argument");
-        };
-
-        Args { level }
     }
 }
 
@@ -127,32 +164,94 @@ fn gen_block(
     fn_name: &str,
     args: Args,
 ) -> proc_macro2::TokenStream {
-    // Generate the instrumented function body.
-    // If the function is an `async fn`, this will wrap it in an async block.
-    if async_context {
-        let log = gen_log(&args.level, fn_name, "__ret_value");
-        let block = quote_spanned!(block.span()=>
-            async move {
-                let __ret_value = #block;
-                #log;
-                __ret_value
+    match args {
+        Args::Simple { level } =>  {
+            // Generate the instrumented function body.
+            // If the function is an `async fn`, this will wrap it in an async block.
+            if async_context {
+                let log = gen_log(&level, fn_name, "__ret_value");
+                let block = quote_spanned!(block.span()=>
+                    async move {
+                        let __ret_value = #block;
+                        #log;
+                        __ret_value
+                    }
+                );
+        
+                if async_keyword {
+                    quote_spanned!(block.span()=>
+                        #block.await
+                    )
+                } else {
+                    block
+                }
+            } else {
+                let log = gen_log(&level, fn_name, "__ret_value");
+                quote_spanned!(block.span()=>
+                    let __ret_value = #block;
+                    #log;
+                    __ret_value
+                )
             }
-        );
-
-        if async_keyword {
-            quote_spanned!(block.span()=>
-                #block.await
-            )
-        } else {
-            block
         }
-    } else {
-        let log = gen_log(&args.level, fn_name, "__ret_value");
-        quote_spanned!(block.span()=>
-            let __ret_value = #block;
-            #log;
-            __ret_value
-        )
+        Args::Result { ok_level, err_level } => {
+            let ok_arm = if let Some(ok_level) = ok_level {
+                let log_ok = gen_log(&ok_level, fn_name, "__ret_value");
+                quote_spanned!(block.span()=>
+                    __ret_value@Ok(_) => {
+                        #log_ok;
+                        __ret_value
+                    }
+                )
+            } else {
+                quote_spanned!(block.span()=>
+                    Ok(__ret_value) => Ok(__ret_value),
+                )
+            };
+            let err_arm = if let Some(err_level) = err_level {
+                let log_err = gen_log(&err_level, fn_name, "__ret_value");
+                quote_spanned!(block.span()=>
+                    __ret_value@Err(_) => {
+                        #log_err;
+                        __ret_value
+                    }
+                )
+            } else {
+                quote_spanned!(block.span()=>
+                    Err(__ret_value) => Err(__ret_value),
+                )
+            };
+            
+            // Generate the instrumented function body.
+            // If the function is an `async fn`, this will wrap it in an async block.
+            if async_context {
+                let block = quote_spanned!(block.span()=>
+                    async move {
+                        let __ret_value = #block;
+                        match __ret_value {
+                            #ok_arm
+                            #err_arm
+                        }
+                    }
+                );
+        
+                if async_keyword {
+                    quote_spanned!(block.span()=>
+                        #block.await
+                    )
+                } else {
+                    block
+                }
+            } else {
+                quote_spanned!(block.span()=>
+                    let __ret_value = #block;
+                    match __ret_value {
+                        #ok_arm
+                        #err_arm
+                    }
+                )
+            }
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-error: invalid argument
+error: missing arguments
  --> tests/ui/err/has-no-argument.rs:1:1
   |
 1 | #[logcall::logcall]

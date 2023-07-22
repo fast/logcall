@@ -2,16 +2,16 @@
 #![allow(unused_mut)]
 
 trait MyTrait {
-    async fn work(&self) -> usize;
+    async fn work(&self) -> Result<usize, usize>;
 }
 
 struct MyStruct;
 
 impl MyTrait for MyStruct {
     #[logcall::logcall("debug")]
-    #[logcall::logcall("debug")]
-    async fn work(&self) -> usize {
-        1
+    #[logcall::logcall(ok = "debug", err = "error")]
+    async fn work(&self) -> Result<usize, usize> {
+        Ok(1)
     }
 }
 
