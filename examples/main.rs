@@ -16,7 +16,9 @@ fn baz(a: usize) -> Result<usize, usize> {
 }
 
 fn main() {
-    env_logger::builder().filter_level(log::LevelFilter::Info).init();
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .init();
     foo(1);
     bar(1).ok();
     baz(1).ok();

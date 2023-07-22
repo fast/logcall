@@ -188,6 +188,8 @@ fn gen_block(
             } else {
                 let log = gen_log(&level, fn_name, "__ret_value");
                 quote_spanned!(block.span()=>
+                    #[allow(unknown_lints)]
+                    #[allow(clippy::redundant_closure_call)]
                     let __ret_value = (move || #block)();
                     #log;
                     __ret_value
@@ -247,6 +249,8 @@ fn gen_block(
                 }
             } else {
                 quote_spanned!(block.span()=>
+                    #[allow(unknown_lints)]
+                    #[allow(clippy::redundant_closure_call)]
                     let __ret_value = (move || #block)();
                     match __ret_value {
                         #ok_arm
