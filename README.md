@@ -1,6 +1,6 @@
 # logcall
 
-An attribute macro that logs the return value from function call.
+An attribute macro that logs the function return value.
 
 This is a reimplementation of the [`log-derive`](https://crates.io/crates/log-derive) crate with [`async-trait`](https://crates.io/crates/async-trait) compatibility.
 

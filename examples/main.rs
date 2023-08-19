@@ -6,12 +6,12 @@ fn foo(a: usize) -> usize {
 }
 
 #[logcall(err = "error")]
-fn bar(a: usize) -> Result<usize, usize> {
-    Err(a + 1)
+fn bar(a: usize) -> Result<usize, String> {
+    Err(format!("{}", a + 1))
 }
 
 #[logcall(ok = "info", err = "error")]
-fn baz(a: usize) -> Result<usize, usize> {
+fn baz(a: usize) -> Result<usize, String> {
     Ok(a + 1)
 }
 

@@ -74,7 +74,7 @@ impl Args {
     }
 }
 
-/// An attribute macro that logs the return values of functions.
+/// An attribute macro that logs the function return value.
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn logcall(
@@ -270,7 +270,7 @@ fn gen_log(level: &str, fn_name: &str, return_value: &str) -> proc_macro2::Token
     let level: Ident = Ident::new(&level, Span::call_site());
     let return_value: Ident = Ident::new(return_value, Span::call_site());
     quote!(
-        log::#level! ("{}() => {:?}", #fn_name, #return_value)
+        log::#level! ("{}() => {:?}", #fn_name, &#return_value)
     )
 }
 
