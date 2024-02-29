@@ -6,6 +6,8 @@
 // into a normal fn which returns `Box<impl Future>`, and this stops the macro from distinguishing `async fn` from `fn`.
 // The following code reused the `async_trait` probes from [tokio-tracing](https://github.com/tokio-rs/tracing/blob/6a61897a5e834988ad9ac709e28c93c4dbf29116/tracing-attributes/src/expand.rs).
 
+mod features;
+
 extern crate proc_macro;
 
 #[macro_use]
@@ -18,6 +20,7 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::Comma;
 use syn::*;
+use crate::features::FORMAT_PLACEHOLDER;
 
 /// Contains the internal representation of this proc-macro arguments.
 /// See [MacroArgs::parse()] for more info.
@@ -315,7 +318,7 @@ fn gen_egress_block(
             // If the function is an `async fn`, this will wrap it in an async block.
             if async_context {
                 let log =
-                    gen_egress_log(level, fn_name, fn_args, &macro_args.params, "__ret_value");
+                    gen_egress_log(level, fn_name, fn_args, &macro_args.params, "__ret_value", "", "");
                 let block = quote_spanned!(block.span()=>
                     async move {
                         let __ret_value = async move { #block }.await;
@@ -333,7 +336,7 @@ fn gen_egress_block(
                 }
             } else {
                 let log =
-                    gen_egress_log(level, fn_name, fn_args, &macro_args.params, "__ret_value");
+                    gen_egress_log(level, fn_name, fn_args, &macro_args.params, "__ret_value", "", "");
                 quote_spanned!(block.span()=>
                     #[allow(unknown_lints)]
                     #[allow(clippy::redundant_closure_call)]
@@ -353,17 +356,18 @@ fn gen_egress_block(
                     fn_name,
                     fn_args,
                     &macro_args.params,
-                    "__ret_value",
+                    "__ok_value",
+                    "Ok(",
+                    ")"
                 );
                 quote_spanned!(block.span()=>
-                    __ret_value@Ok(_) => {
+                    Ok(__ok_value) => {
                         #log_ok;
-                        __ret_value
                     }
                 )
             } else {
                 quote_spanned!(block.span()=>
-                    Ok(__ret_value) => Ok(__ret_value),
+                    Ok(__ret_value) => (),
                 )
             };
             let err_arm = if let Some(err_level) = err_level {
@@ -372,17 +376,18 @@ fn gen_egress_block(
                     fn_name,
                     fn_args,
                     &macro_args.params,
-                    "__ret_value",
+                    "__err_value",
+                    "Err(",
+                    ")"
                 );
                 quote_spanned!(block.span()=>
-                    __ret_value@Err(_) => {
+                    Err(__err_value) => {
                         #log_err;
-                        __ret_value
                     }
                 )
             } else {
                 quote_spanned!(block.span()=>
-                    Err(__ret_value) => Err(__ret_value),
+                    Err(__ret_value) => (),
                 )
             };
 
@@ -392,10 +397,11 @@ fn gen_egress_block(
                 let block = quote_spanned!(block.span()=>
                     async move {
                         let __ret_value = async move { #block }.await;
-                        match __ret_value {
+                        match &__ret_value {
                             #ok_arm
                             #err_arm
                         }
+                        __ret_value
                     }
                 );
 
@@ -411,10 +417,11 @@ fn gen_egress_block(
                     #[allow(unknown_lints)]
                     #[allow(clippy::redundant_closure_call)]
                     let __ret_value = (move || #block)();
-                    match __ret_value {
+                    match &__ret_value {
                         #ok_arm
                         #err_arm
                     }
+                    __ret_value
                 )
             }
         }
@@ -432,7 +439,7 @@ fn gen_ingress_log(
         abort_call_site!("unknown log level '{}'", level);
     }
     let level: Ident = Ident::new(&level, Span::call_site());
-    let mut fmt = String::from("<= {}(");
+    let mut fmt = String::from("<= {}(");   // `fn_name`
     let (input_params, input_values) = build_input_format_arguments(
         param_names,
         params_to_skip
@@ -453,6 +460,10 @@ fn gen_egress_log(
     param_names: &[Ident],
     params_to_skip: &Option<Vec<String>>,
     return_value: &str,
+    // the following 2 parameters allow showing `Result`s even if using the `format-display` feature,
+    // as `Result` can only be directly formatted with either {:?} or {:#?}
+    return_value_prefix: &str,
+    return_value_suffix: &str,
 ) -> TokenStream {
     let level = level.to_lowercase();
     if !["error", "warn", "info", "debug", "trace"].contains(&level.as_str()) {
@@ -460,7 +471,7 @@ fn gen_egress_log(
     }
     let level: Ident = Ident::new(&level, Span::call_site());
     let return_value: Ident = Ident::new(return_value, Span::call_site());
-    let mut fmt = String::from("{}(");
+    let mut fmt = String::from("{}(");  // `fn_name`
     let (input_params, input_values) = build_input_format_arguments(
         param_names,
         params_to_skip
@@ -468,7 +479,10 @@ fn gen_egress_log(
             .unwrap_or(&param_names.iter().map(|ident| ident.to_string()).collect()),
     );
     fmt.push_str(&input_params);
-    fmt.push_str(") => {:?}");
+    fmt.push_str(") => ");
+    fmt.push_str(return_value_prefix);
+    fmt.push_str(FORMAT_PLACEHOLDER);   // `return_value`
+    fmt.push_str(return_value_suffix);
 // abort_call_site!("egress FORMAT: #fmt: {}, #fn_name: {}, #input_values: {:?}, &#return_value: {}", fmt, fn_name, input_values, &return_value);
     quote!(
         ::log::#level! (#fmt, #fn_name, #input_values /*notice the missing comma*/ &#return_value)
@@ -493,8 +507,8 @@ fn build_input_format_arguments(
             let placeholder = if to_skip.contains(&param_name) {
                 "<skipped>"
             } else {
-                // the param will be serialized with `debug`
-                "{:?}"
+                // the format placeholder to serialize the param
+                FORMAT_PLACEHOLDER
             };
             let placeholder_separator = if param_index > 0 { ", " } else { "" };
             let format_placeholder = format!("{placeholder_separator}{param_name}: {placeholder}");
