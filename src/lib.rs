@@ -105,15 +105,14 @@ impl Parse for MacroArgs {
                 let Expr::Array(expr_array) = name_value.value.clone() else {
                     panic!("`skip` parameter, if present, should be an array of identifiers: skip=[a,b,c,...]");
                 };
-                skip.replace(Vec::new());
+                let skip = skip.insert(Vec::new());
                 for pair in expr_array.elems.pairs() {
                     let Expr::Path(path) = pair.value()
                     else {
                         panic!("unknown element type -- `skip` must be an array of identifiers");
                     };
                     let ident = path.to_token_stream().to_string();
-                    skip.as_mut()
-                        .map(|skip| skip.push(ident));
+                    skip.push(ident);
                 }
                 continue;
             }
@@ -179,7 +178,7 @@ pub fn logcall(
     let macro_args = syn::parse_macro_input!(macro_args_tokens as MacroArgs);
 
     let fn_name = fn_item.sig.ident.to_string();
-    let fn_args = fn_item
+    let fn_args: Vec<Ident> = fn_item
         .sig
         .inputs
         .iter()
@@ -285,7 +284,7 @@ pub fn logcall(
 fn gen_ingress_block(
     block: TokenStream,
     fn_name: &str,
-    fn_args: &Vec<Ident>,
+    fn_args: &[Ident],
     macro_args: &MacroArgs,
 ) -> proc_macro2::TokenStream {
     let Some(ref log_ingress_level) =
@@ -293,7 +292,7 @@ fn gen_ingress_block(
     else {
         return block.to_token_stream()
     };
-    let log = gen_ingress_log(&log_ingress_level, fn_name, &fn_args, &macro_args.params);
+    let log = gen_ingress_log(log_ingress_level, fn_name, fn_args, &macro_args.params);
     quote_spanned!(block.span()=>
         #log;
         #block
@@ -306,7 +305,7 @@ fn gen_egress_block(
     async_context: bool,
     async_keyword: bool,
     fn_name: &str,
-    fn_args: &Vec<Ident>,
+    fn_args: &[Ident],
     macro_args: &MacroArgs,
 ) -> proc_macro2::TokenStream {
     let Some(ref log_egress_args) =
@@ -319,7 +318,7 @@ fn gen_egress_block(
             // Generate the instrumented function body.
             // If the function is an `async fn`, this will wrap it in an async block.
             if async_context {
-                let log = gen_egress_log(&level, fn_name, &fn_args, &macro_args.params, "__ret_value");
+                let log = gen_egress_log(level, fn_name, fn_args, &macro_args.params, "__ret_value");
                 let block = quote_spanned!(block.span()=>
                     async move {
                         let __ret_value = async move { #block }.await;
@@ -336,7 +335,7 @@ fn gen_egress_block(
                     block
                 }
             } else {
-                let log = gen_egress_log(&level, fn_name, &fn_args, &macro_args.params, "__ret_value");
+                let log = gen_egress_log(level, fn_name, fn_args, &macro_args.params, "__ret_value");
                 quote_spanned!(block.span()=>
                     #[allow(unknown_lints)]
                     #[allow(clippy::redundant_closure_call)]
@@ -351,7 +350,7 @@ fn gen_egress_block(
             err_level,
         } => {
             let ok_arm = if let Some(ok_level) = ok_level {
-                let log_ok = gen_egress_log(&ok_level, fn_name, &fn_args, &macro_args.params, "__ret_value");
+                let log_ok = gen_egress_log(ok_level, fn_name, fn_args, &macro_args.params, "__ret_value");
                 quote_spanned!(block.span()=>
                     __ret_value@Ok(_) => {
                         #log_ok;
@@ -364,7 +363,7 @@ fn gen_egress_block(
                 )
             };
             let err_arm = if let Some(err_level) = err_level {
-                let log_err = gen_egress_log(&err_level, fn_name, &fn_args, &macro_args.params, "__ret_value");
+                let log_err = gen_egress_log(err_level, fn_name, fn_args, &macro_args.params, "__ret_value");
                 quote_spanned!(block.span()=>
                     __ret_value@Err(_) => {
                         #log_err;
@@ -412,7 +411,7 @@ fn gen_egress_block(
     }
 }
 
-fn gen_ingress_log(level: &str, fn_name: &str, param_names: &Vec<Ident>, params_to_skip: &Option<Vec<String>>) -> TokenStream {
+fn gen_ingress_log(level: &str, fn_name: &str, param_names: &[Ident], params_to_skip: &Option<Vec<String>>) -> TokenStream {
     let level = level.to_lowercase();
     if !["error", "warn", "info", "debug", "trace"].contains(&level.as_str()) {
         abort_call_site!("unknown log level '{}'", level);
@@ -428,7 +427,7 @@ fn gen_ingress_log(level: &str, fn_name: &str, param_names: &Vec<Ident>, params_
     )
 }
 
-fn gen_egress_log(level: &str, fn_name: &str, param_names: &Vec<Ident>, params_to_skip: &Option<Vec<String>>, return_value: &str) -> TokenStream {
+fn gen_egress_log(level: &str, fn_name: &str, param_names: &[Ident], params_to_skip: &Option<Vec<String>>, return_value: &str) -> TokenStream {
     let level = level.to_lowercase();
     if !["error", "warn", "info", "debug", "trace"].contains(&level.as_str()) {
         abort_call_site!("unknown log level '{}'", level);
@@ -448,7 +447,7 @@ fn gen_egress_log(level: &str, fn_name: &str, param_names: &Vec<Ident>, params_t
 /// Builds the arguments to be used in `format!()`.
 /// Returns: (format_placeholders, format_values)
 /// Caveat: `format_values` is a `TokenStream` with an extra comma, for coding simplicity -- meaning no comma should be placed after it, when using it in `quote!()`
-fn build_input_format_arguments(param_idents: &Vec<Ident>, to_skip: &Vec<String>)
+fn build_input_format_arguments(param_idents: &[Ident], to_skip: &[String])
                                 -> (/*format_placeholders: */String, /*format_values: */TokenStream) {
     let format_placeholders = param_idents.iter().enumerate()
         .map(|(param_index, param_ident)| {
@@ -464,10 +463,11 @@ fn build_input_format_arguments(param_idents: &Vec<Ident>, to_skip: &Vec<String>
             format_placeholder
         })
         .collect();
-    let format_values: Punctuated<Ident, Comma> = param_idents.iter().cloned()
+    let format_values: Punctuated<Ident, Comma> = param_idents.iter()
         .filter(|param_ident| !to_skip.contains(&param_ident.to_string()))
+        .cloned()
         .collect();
-    let format_values = if format_values.len() == 0 {
+    let format_values = if format_values.is_empty() {
         format_values.to_token_stream()
     } else {
         quote!(#format_values, /* notice the leading comma */)
