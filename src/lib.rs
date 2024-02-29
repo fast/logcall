@@ -95,18 +95,18 @@ impl Parse for MacroArgs {
         let name_values = Punctuated::<MetaNameValue, Token![,]>::parse_terminated(args)?;
         for name_value in &name_values {
             let Some(name) = name_value.path.get_ident().map(|ident| ident.to_string()) else {
-                panic!("On `name=val` parameters, `name` must be an identifier");
+                abort_call_site!("On `name=val` parameters, `name` must be an identifier");
             };
 
             // treat the optional skip=array parameter -- where `array` a list of identifiers: skip=[identifiers_list];
             if name.as_str() == "skip" {
                 let Expr::Array(expr_array) = name_value.value.clone() else {
-                    panic!("`skip` parameter, if present, should be an array of identifiers: skip=[a,b,c,...]");
+                    abort_call_site!("`skip` parameter, if present, should be an array of identifiers: skip=[a,b,c,...]");
                 };
                 let skip = skip.insert(Vec::new());
                 for pair in expr_array.elems.pairs() {
                     let Expr::Path(path) = pair.value() else {
-                        panic!("unknown element type -- `skip` must be an array of identifiers");
+                        abort_call_site!("unknown element type -- `skip` must be an array of identifiers");
                     };
                     let ident = path.to_token_stream().to_string();
                     skip.push(ident);
@@ -116,7 +116,7 @@ impl Parse for MacroArgs {
 
             // treat name=literal values
             let Expr::Lit(ref literal_value) = name_value.value else {
-                panic!("On `name=level` parameters, `val` must be a literal -- either \"trace\", \"debug\", \"info\", \"warn\" or \"error\"");
+                abort_call_site!("On `name=level` parameters, `val` must be a literal -- either \"trace\", \"debug\", \"info\", \"warn\" or \"error\"");
             };
             let value = trim_quotes(&literal_value.lit.to_token_stream().to_string());
             match name.as_str() {
@@ -124,7 +124,7 @@ impl Parse for MacroArgs {
                 "ok" => ok.replace(value),
                 "ingress" => ingress.replace(value),
                 "egress" => egress.replace(value),
-                _ => panic!("Unknown `name` parameter in the `name=value` form: {}={}. Name must be `err`, `ok`, `ingress`, `egress` or `skip`", name, value),
+                _ => abort_call_site!("Unknown `name` parameter in the `name=value` form: {}={}. Name must be `err`, `ok`, `ingress`, `egress` or `skip`", name, value),
             };
         }
 
@@ -190,7 +190,7 @@ pub fn logcall(
                 if let Pat::Ident(ident) = *pat_type.pat {
                     ident.ident
                 } else {
-                    panic!("Unknown parameter declaration for {:?}", pat_type);
+                    abort_call_site!("Unknown parameter declaration for {:?}", pat_type);
                 }
             }
         })
@@ -286,7 +286,7 @@ fn gen_ingress_block(
     fn_name: &str,
     fn_args: &[Ident],
     macro_args: &MacroArgs,
-) -> proc_macro2::TokenStream {
+) -> TokenStream {
     let Some(ref log_ingress_level) = macro_args.log_ingress_level else {
         return block.to_token_stream();
     };
@@ -305,7 +305,7 @@ fn gen_egress_block(
     fn_name: &str,
     fn_args: &[Ident],
     macro_args: &MacroArgs,
-) -> proc_macro2::TokenStream {
+) -> TokenStream {
     let Some(ref log_egress_args) = macro_args.log_egress_args else {
         return block.to_token_stream();
     };
@@ -441,7 +441,7 @@ fn gen_ingress_log(
     );
     fmt.push_str(&input_params);
     fmt.push_str("):");
-    // panic!("ingress FORMAT: #fmt: {}, #fn_name: {}, #input_values: {:?}", fmt, fn_name, input_values);
+// abort_call_site!("ingress FORMAT: #fmt: {}, #fn_name: {}, #input_values: {:?}", fmt, fn_name, input_values);
     quote!(
         ::log::#level! (#fmt, #fn_name, #input_values)
     )
@@ -469,7 +469,7 @@ fn gen_egress_log(
     );
     fmt.push_str(&input_params);
     fmt.push_str(") => {:?}");
-    // panic!("egress FORMAT: #fmt: {}, #fn_name: {}, #input_values: {:?}, &#return_value: {}", fmt, fn_name, input_values, &return_value);
+// abort_call_site!("egress FORMAT: #fmt: {}, #fn_name: {}, #input_values: {:?}, &#return_value: {}", fmt, fn_name, input_values, &return_value);
     quote!(
         ::log::#level! (#fmt, #fn_name, #input_values /*notice the missing comma*/ &#return_value)
     )
