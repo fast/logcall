@@ -13,12 +13,11 @@ extern crate proc_macro_error;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, ToTokens};
-use syn::spanned::Spanned;
-use syn::Ident;
-use syn::*;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
 use syn::token::Comma;
+use syn::*;
 
 /// Contains the internal representation of this proc-macro arguments.
 /// See [MacroArgs::parse()] for more info.
@@ -37,9 +36,7 @@ struct MacroArgs {
 /// Arguments for the "log on the egress of a function" feature
 enum LogEgressArgs {
     /// Egress log info for a non-fallible function
-    Simple {
-        level: String,
-    },
+    Simple { level: String },
     /// Egress log info for a fallible function
     Result {
         ok_level: Option<String>,
@@ -48,7 +45,6 @@ enum LogEgressArgs {
 }
 
 impl Parse for MacroArgs {
-
     /// `args` comes from one of the forms bellow
     ///    1) LEVEL -- logs only the output of a function, when leaving the function -- without any distinction regarding if it is fallible or not
     ///    2) ingress=LEVEL -- logs only the inputs of a function call, on function ingress
@@ -75,13 +71,17 @@ impl Parse for MacroArgs {
     ///   All named parameters -- "ingress", "egress", "err", "ok" & "skip" -- may come in any order.
     ///   There is a requirement, 'though, that the literal parameter "LEVEL" must be the first one, if present
     fn parse(args: ParseStream) -> Result<MacroArgs> {
-
         fn trim_quotes(maybe_quoted: &str) -> String {
-            maybe_quoted.trim_start_matches('"').trim_end_matches('"').to_string()
+            maybe_quoted
+                .trim_start_matches('"')
+                .trim_end_matches('"')
+                .to_string()
         }
 
         // match & consume the optional legacy output "level" literal
-        let legacy_output = args.parse::<syn::Lit>().ok()
+        let legacy_output = args
+            .parse::<syn::Lit>()
+            .ok()
             .map(|literal| trim_quotes(&literal.to_token_stream().to_string()));
         // consumes the "," between the legacy and "name=val" list that may, possibly, follow
         args.parse::<Token![,]>().ok();
@@ -94,9 +94,7 @@ impl Parse for MacroArgs {
         let mut skip = None;
         let name_values = Punctuated::<MetaNameValue, Token![,]>::parse_terminated(args)?;
         for name_value in &name_values {
-            let Some(name) =
-                name_value.path.get_ident().map(|ident| ident.to_string())
-            else {
+            let Some(name) = name_value.path.get_ident().map(|ident| ident.to_string()) else {
                 panic!("On `name=val` parameters, `name` must be an identifier");
             };
 
@@ -107,8 +105,7 @@ impl Parse for MacroArgs {
                 };
                 let skip = skip.insert(Vec::new());
                 for pair in expr_array.elems.pairs() {
-                    let Expr::Path(path) = pair.value()
-                    else {
+                    let Expr::Path(path) = pair.value() else {
                         panic!("unknown element type -- `skip` must be an array of identifiers");
                     };
                     let ident = path.to_token_stream().to_string();
@@ -118,9 +115,7 @@ impl Parse for MacroArgs {
             }
 
             // treat name=literal values
-            let Expr::Lit(ref literal_value) =
-                name_value.value
-            else {
+            let Expr::Lit(ref literal_value) = name_value.value else {
                 panic!("On `name=level` parameters, `val` must be a literal -- either \"trace\", \"debug\", \"info\", \"warn\" or \"error\"");
             };
             let value = trim_quotes(&literal_value.lit.to_token_stream().to_string());
@@ -144,15 +139,22 @@ impl Parse for MacroArgs {
 
         // egress logging rules
         let log_egress_args = if let Some(simple_output_level) = egress {
-            Some(LogEgressArgs::Simple { level: simple_output_level })
+            Some(LogEgressArgs::Simple {
+                level: simple_output_level,
+            })
         } else if let Some(simple_output_level) = legacy_output {
-            Some(LogEgressArgs::Simple { level: simple_output_level })
+            Some(LogEgressArgs::Simple {
+                level: simple_output_level,
+            })
         } else {
             // result output?
             if ok.is_none() && err.is_none() {
                 None
             } else {
-                Some(LogEgressArgs::Result { ok_level: ok, err_level: err })
+                Some(LogEgressArgs::Result {
+                    ok_level: ok,
+                    err_level: err,
+                })
             }
         };
 
@@ -163,7 +165,6 @@ impl Parse for MacroArgs {
             log_egress_args,
             params: skip,
         })
-
     }
 }
 
@@ -212,20 +213,19 @@ pub fn logcall(
             AsyncTraitKind::Async(async_expr) => {
                 // fallback if we couldn't find the '__async_trait' binding, might be
                 // useful for crates exhibiting the same behaviors as async-trait
-                let instrumented_block =
-                    gen_ingress_block(
-                        gen_egress_block(
-                            &async_expr.block,
-                            true,
-                            false,
-                            &fn_name,
-                            &fn_args,
-                            &macro_args,
-                        ),
+                let instrumented_block = gen_ingress_block(
+                    gen_egress_block(
+                        &async_expr.block,
+                        true,
+                        false,
                         &fn_name,
                         &fn_args,
                         &macro_args,
-                    );
+                    ),
+                    &fn_name,
+                    &fn_args,
+                    &macro_args,
+                );
                 let async_attrs = &async_expr.attrs;
                 quote! {
                     Box::pin(#(#async_attrs) * #instrumented_block )
@@ -244,7 +244,7 @@ pub fn logcall(
             ),
             &fn_name,
             &fn_args,
-            &macro_args
+            &macro_args,
         )
     };
 
@@ -287,10 +287,8 @@ fn gen_ingress_block(
     fn_args: &[Ident],
     macro_args: &MacroArgs,
 ) -> proc_macro2::TokenStream {
-    let Some(ref log_ingress_level) =
-        macro_args.log_ingress_level
-    else {
-        return block.to_token_stream()
+    let Some(ref log_ingress_level) = macro_args.log_ingress_level else {
+        return block.to_token_stream();
     };
     let log = gen_ingress_log(log_ingress_level, fn_name, fn_args, &macro_args.params);
     quote_spanned!(block.span()=>
@@ -308,17 +306,16 @@ fn gen_egress_block(
     fn_args: &[Ident],
     macro_args: &MacroArgs,
 ) -> proc_macro2::TokenStream {
-    let Some(ref log_egress_args) =
-        macro_args.log_egress_args
-    else {
-        return block.to_token_stream()
+    let Some(ref log_egress_args) = macro_args.log_egress_args else {
+        return block.to_token_stream();
     };
     match log_egress_args {
         LogEgressArgs::Simple { level } => {
             // Generate the instrumented function body.
             // If the function is an `async fn`, this will wrap it in an async block.
             if async_context {
-                let log = gen_egress_log(level, fn_name, fn_args, &macro_args.params, "__ret_value");
+                let log =
+                    gen_egress_log(level, fn_name, fn_args, &macro_args.params, "__ret_value");
                 let block = quote_spanned!(block.span()=>
                     async move {
                         let __ret_value = async move { #block }.await;
@@ -335,7 +332,8 @@ fn gen_egress_block(
                     block
                 }
             } else {
-                let log = gen_egress_log(level, fn_name, fn_args, &macro_args.params, "__ret_value");
+                let log =
+                    gen_egress_log(level, fn_name, fn_args, &macro_args.params, "__ret_value");
                 quote_spanned!(block.span()=>
                     #[allow(unknown_lints)]
                     #[allow(clippy::redundant_closure_call)]
@@ -350,7 +348,13 @@ fn gen_egress_block(
             err_level,
         } => {
             let ok_arm = if let Some(ok_level) = ok_level {
-                let log_ok = gen_egress_log(ok_level, fn_name, fn_args, &macro_args.params, "__ret_value");
+                let log_ok = gen_egress_log(
+                    ok_level,
+                    fn_name,
+                    fn_args,
+                    &macro_args.params,
+                    "__ret_value",
+                );
                 quote_spanned!(block.span()=>
                     __ret_value@Ok(_) => {
                         #log_ok;
@@ -363,7 +367,13 @@ fn gen_egress_block(
                 )
             };
             let err_arm = if let Some(err_level) = err_level {
-                let log_err = gen_egress_log(err_level, fn_name, fn_args, &macro_args.params, "__ret_value");
+                let log_err = gen_egress_log(
+                    err_level,
+                    fn_name,
+                    fn_args,
+                    &macro_args.params,
+                    "__ret_value",
+                );
                 quote_spanned!(block.span()=>
                     __ret_value@Err(_) => {
                         #log_err;
@@ -411,23 +421,39 @@ fn gen_egress_block(
     }
 }
 
-fn gen_ingress_log(level: &str, fn_name: &str, param_names: &[Ident], params_to_skip: &Option<Vec<String>>) -> TokenStream {
+fn gen_ingress_log(
+    level: &str,
+    fn_name: &str,
+    param_names: &[Ident],
+    params_to_skip: &Option<Vec<String>>,
+) -> TokenStream {
     let level = level.to_lowercase();
     if !["error", "warn", "info", "debug", "trace"].contains(&level.as_str()) {
         abort_call_site!("unknown log level '{}'", level);
     }
     let level: Ident = Ident::new(&level, Span::call_site());
     let mut fmt = String::from("<= {}(");
-    let (input_params, input_values) = build_input_format_arguments(param_names, params_to_skip.as_ref().unwrap_or(&param_names.iter().map(|ident| ident.to_string()).collect()));
+    let (input_params, input_values) = build_input_format_arguments(
+        param_names,
+        params_to_skip
+            .as_ref()
+            .unwrap_or(&param_names.iter().map(|ident| ident.to_string()).collect()),
+    );
     fmt.push_str(&input_params);
     fmt.push_str("):");
-// panic!("ingress FORMAT: #fmt: {}, #fn_name: {}, #input_values: {:?}", fmt, fn_name, input_values);
+    // panic!("ingress FORMAT: #fmt: {}, #fn_name: {}, #input_values: {:?}", fmt, fn_name, input_values);
     quote!(
         ::log::#level! (#fmt, #fn_name, #input_values)
     )
 }
 
-fn gen_egress_log(level: &str, fn_name: &str, param_names: &[Ident], params_to_skip: &Option<Vec<String>>, return_value: &str) -> TokenStream {
+fn gen_egress_log(
+    level: &str,
+    fn_name: &str,
+    param_names: &[Ident],
+    params_to_skip: &Option<Vec<String>>,
+    return_value: &str,
+) -> TokenStream {
     let level = level.to_lowercase();
     if !["error", "warn", "info", "debug", "trace"].contains(&level.as_str()) {
         abort_call_site!("unknown log level '{}'", level);
@@ -435,10 +461,15 @@ fn gen_egress_log(level: &str, fn_name: &str, param_names: &[Ident], params_to_s
     let level: Ident = Ident::new(&level, Span::call_site());
     let return_value: Ident = Ident::new(return_value, Span::call_site());
     let mut fmt = String::from("{}(");
-    let (input_params, input_values) = build_input_format_arguments(param_names, params_to_skip.as_ref().unwrap_or(&param_names.iter().map(|ident| ident.to_string()).collect()));
+    let (input_params, input_values) = build_input_format_arguments(
+        param_names,
+        params_to_skip
+            .as_ref()
+            .unwrap_or(&param_names.iter().map(|ident| ident.to_string()).collect()),
+    );
     fmt.push_str(&input_params);
     fmt.push_str(") => {:?}");
-// panic!("egress FORMAT: #fmt: {}, #fn_name: {}, #input_values: {:?}, &#return_value: {}", fmt, fn_name, input_values, &return_value);
+    // panic!("egress FORMAT: #fmt: {}, #fn_name: {}, #input_values: {:?}, &#return_value: {}", fmt, fn_name, input_values, &return_value);
     quote!(
         ::log::#level! (#fmt, #fn_name, #input_values /*notice the missing comma*/ &#return_value)
     )
@@ -447,9 +478,16 @@ fn gen_egress_log(level: &str, fn_name: &str, param_names: &[Ident], params_to_s
 /// Builds the arguments to be used in `format!()`.
 /// Returns: (format_placeholders, format_values)
 /// Caveat: `format_values` is a `TokenStream` with an extra comma, for coding simplicity -- meaning no comma should be placed after it, when using it in `quote!()`
-fn build_input_format_arguments(param_idents: &[Ident], to_skip: &[String])
-                                -> (/*format_placeholders: */String, /*format_values: */TokenStream) {
-    let format_placeholders = param_idents.iter().enumerate()
+fn build_input_format_arguments(
+    param_idents: &[Ident],
+    to_skip: &[String],
+) -> (
+    /*format_placeholders: */ String,
+    /*format_values: */ TokenStream,
+) {
+    let format_placeholders = param_idents
+        .iter()
+        .enumerate()
         .map(|(param_index, param_ident)| {
             let param_name = param_ident.to_string();
             let placeholder = if to_skip.contains(&param_name) {
@@ -458,12 +496,13 @@ fn build_input_format_arguments(param_idents: &[Ident], to_skip: &[String])
                 // the param will be serialized with `debug`
                 "{:?}"
             };
-            let placeholder_separator = if param_index>0 {", "} else {""};
+            let placeholder_separator = if param_index > 0 { ", " } else { "" };
             let format_placeholder = format!("{placeholder_separator}{param_name}: {placeholder}");
             format_placeholder
         })
         .collect();
-    let format_values: Punctuated<Ident, Comma> = param_idents.iter()
+    let format_values: Punctuated<Ident, Comma> = param_idents
+        .iter()
         .filter(|param_ident| !to_skip.contains(&param_ident.to_string()))
         .cloned()
         .collect();
