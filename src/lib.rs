@@ -11,66 +11,160 @@ extern crate proc_macro;
 #[macro_use]
 extern crate proc_macro_error;
 
-use proc_macro2::Span;
-use quote::quote_spanned;
+use proc_macro2::{Span, TokenStream};
+use quote::{quote_spanned, ToTokens};
 use syn::spanned::Spanned;
 use syn::Ident;
 use syn::*;
+use syn::parse::{Parse, ParseStream};
+use syn::punctuated::Punctuated;
+use syn::token::Comma;
 
-enum Args {
+/// Contains the internal representation of this proc-macro arguments.
+/// See [MacroArgs::parse()] for more info.
+struct MacroArgs {
+    /// If `None`, no function ingress logging will be done -- as determined by the attributes parameters
+    log_ingress_level: Option<String>,
+    /// If `None`, no function egress logging will be done
+    log_egress_args: Option<LogEgressArgs>,
+    /// If `None`, params for the function won't be logged.
+    /// If `Some`, parameters not in the list will be logged (through the `Debug` trait),
+    /// either in ingress, egress or both.
+    /// If the list is `Some([])` (empty list), all the parameters will be logged.
+    params: Option<Vec<String>>,
+}
+
+/// Arguments for the "log on the egress of a function" feature
+enum LogEgressArgs {
+    /// Egress log info for a non-fallible function
     Simple {
         level: String,
     },
+    /// Egress log info for a fallible function
     Result {
         ok_level: Option<String>,
         err_level: Option<String>,
     },
 }
 
-impl Args {
-    fn parse(input: AttributeArgs) -> Args {
-        match input.as_slice() {
-            [NestedMeta::Lit(Lit::Str(s))] => Args::Simple { level: s.value() },
-            [NestedMeta::Meta(Meta::NameValue(MetaNameValue {
-                path,
-                lit: Lit::Str(s),
-                ..
-            }))] if path.is_ident("ok") => Args::Result {
-                ok_level: Some(s.value()),
-                err_level: None,
-            },
-            [NestedMeta::Meta(Meta::NameValue(MetaNameValue {
-                path,
-                lit: Lit::Str(s),
-                ..
-            }))] if path.is_ident("err") => Args::Result {
-                ok_level: None,
-                err_level: Some(s.value()),
-            },
-            [NestedMeta::Meta(Meta::NameValue(MetaNameValue {
-                path,
-                lit: Lit::Str(s),
-                ..
-            })), NestedMeta::Meta(Meta::NameValue(MetaNameValue {
-                path: path2,
-                lit: Lit::Str(s2),
-                ..
-            }))]
-            | [NestedMeta::Meta(Meta::NameValue(MetaNameValue {
-                path: path2,
-                lit: Lit::Str(s2),
-                ..
-            })), NestedMeta::Meta(Meta::NameValue(MetaNameValue {
-                path,
-                lit: Lit::Str(s),
-                ..
-            }))] if path.is_ident("ok") && path2.is_ident("err") => Args::Result {
-                ok_level: Some(s.value()),
-                err_level: Some(s2.value()),
-            },
-            [] => abort_call_site!("missing arguments"),
-            _ => abort_call_site!("invalid arguments"),
+impl Parse for MacroArgs {
+
+    /// `args` comes from one of the forms bellow
+    ///    1) LEVEL -- logs only the output of a function, when leaving the function -- without any distinction regarding if it is fallible or not
+    ///    2) ingress=LEVEL -- logs only the inputs of a function call, on function ingress
+    ///    3) ingress=LEVEL, egress=LEVEL -- same as #1 & #2 combined
+    ///    4) LEVEL, skip=[list]) -- same as #1, logging both the return value and the inputs when leaving the function, but excludes the parameter names in [list] from the `debug` serialization
+    ///    5) ingress=LEVEL, skip=[list] -- same as #2, but excludes the identifiers in [list] from the `debug` serialization
+    ///    6) ingress=LEVEL, egress=LEVEL, skip=[list] -- same as #3, but excludes the identifiers in [list] from the `debug` serialization
+    ///    7) ok=LEVEL, err=LEVEL -- logs only the output of a fallible function -- either `Ok` or `Err` -- in their designated levels
+    ///    8) ok=LEVEL -- same as #7, but refrains from logging results that failed in `Err`
+    ///    9) err=LEVEL -- same as #7, but refrains from logging results that succeeded in `Ok`
+    ///   10) ingress=LEVEL, ok=LEVEL, err=LEVEL -- same as #3, but for a fallible function -- with each result variant logged at their designated levels
+    ///   11) ingress=LEVEL, ok=LEVEL -- same as #8, additionally logging all the inputs on both ingress & egress
+    ///   12) ingress=LEVEL, err=LEVEL -- same as #9, additionally logging all the inputs on both ingress & egress
+    ///   13) ingress=LEVEL, ok=LEVEL, err=LEVEL, skip=[list] -- same as #10, but excludes the parameters in [list] from the `debug` serialization on ingress & egress
+    ///   14) ingress=LEVEL, ok=LEVEL, skip=[list] -- same as #11, but excludes the parameters in [list] from the `debug` serialization
+    ///   15) ingress=LEVEL, err=LEVEL, skip=[list] -- same as #12, but excludes the parameters in [list] from the `debug` serialization
+    ///   16) [ok=LEVEL, ][err=LEVEL, ]skip=[list] -- error: if `skip` is present (meaning logging the inputs is activated), either `ingress`, `egress` or the legacy egress LEVEL literal must also be present
+    ///   17) LEVEL, [*, ]egress=LEVEL -- error: The legacy egress level and the new "egress=LEVEL" form cannot be specified concurrently
+    ///   18) <empty> -- error: when annotating with #[logcall(...)], parameters should be provided, otherwise the annotation would have no effect
+    /// where:
+    ///   LEVEL: "trace"|"debug"|"info"|"warn"|"error"
+    ///   [list]: a list of identifiers, such as self,param_3,...
+    /// note:
+    ///   All named parameters -- "ingress", "egress", "err", "ok" & "skip" -- may come in any order.
+    ///   There is a requirement, 'though, that the literal parameter "LEVEL" must be the first one, if present
+    fn parse(args: ParseStream) -> Result<MacroArgs> {
+
+        fn trim_quotes(maybe_quoted: &str) -> String {
+            maybe_quoted.trim_start_matches('"').trim_end_matches('"').to_string()
         }
+
+        // match & consume the optional legacy output "level" literal
+        let legacy_output = args.parse::<syn::Lit>().ok()
+            .map(|literal| trim_quotes(&literal.to_token_stream().to_string()));
+        // consumes the "," between the legacy and "name=val" list that may, possibly, follow
+        args.parse::<Token![,]>().ok();
+
+        // from this point on, all other acceptable parameters will be in the form "name=val<, ...>"
+        let mut ok = None;
+        let mut err = None;
+        let mut ingress = None;
+        let mut egress = None;
+        let mut skip = None;
+        let name_values = Punctuated::<MetaNameValue, Token![,]>::parse_terminated(args)?;
+        for name_value in &name_values {
+            let Some(name) =
+                name_value.path.get_ident().map(|ident| ident.to_string())
+            else {
+                panic!("On `name=val` parameters, `name` must be an identifier");
+            };
+
+            // treat the optional skip=array parameter -- where `array` a list of identifiers: skip=[identifiers_list];
+            if name.as_str() == "skip" {
+                let Expr::Array(expr_array) = name_value.value.clone() else {
+                    panic!("`skip` parameter, if present, should be an array of identifiers: skip=[a,b,c,...]");
+                };
+                skip.replace(Vec::new());
+                for pair in expr_array.elems.pairs() {
+                    let Expr::Path(path) = pair.value()
+                    else {
+                        panic!("unknown element type -- `skip` must be an array of identifiers");
+                    };
+                    let ident = path.to_token_stream().to_string();
+                    skip.as_mut()
+                        .map(|skip| skip.push(ident));
+                }
+                continue;
+            }
+
+            // treat name=literal values
+            let Expr::Lit(ref literal_value) =
+                name_value.value
+            else {
+                panic!("On `name=level` parameters, `val` must be a literal -- either \"trace\", \"debug\", \"info\", \"warn\" or \"error\"");
+            };
+            let value = trim_quotes(&literal_value.lit.to_token_stream().to_string());
+            match name.as_str() {
+                "err" => err.replace(value),
+                "ok" => ok.replace(value),
+                "ingress" => ingress.replace(value),
+                "egress" => egress.replace(value),
+                _ => panic!("Unknown `name` parameter in the `name=value` form: {}={}. Name must be `err`, `ok`, `ingress`, `egress` or `skip`", name, value),
+            };
+        }
+
+        // parameters set checks
+        ////////////////////////
+
+        // ingress logging rules
+        if ingress.is_some() && skip.is_none() {
+            // if "logging on function ingress" is enabled, logging the parameters is also enabled
+            skip.replace(Vec::new());
+        }
+
+        // egress logging rules
+        let log_egress_args = if let Some(simple_output_level) = egress {
+            Some(LogEgressArgs::Simple { level: simple_output_level })
+        } else if let Some(simple_output_level) = legacy_output {
+            Some(LogEgressArgs::Simple { level: simple_output_level })
+        } else {
+            // result output?
+            if ok.is_none() && err.is_none() {
+                None
+            } else {
+                Some(LogEgressArgs::Result { ok_level: ok, err_level: err })
+            }
+        };
+
+        assert!(ingress.is_some() || log_egress_args.is_some(), "`logcall`: when annotating with #[logcall(...)], ingress/egress log level parameters should be provided, otherwise the annotation would have no effect");
+
+        Ok(MacroArgs {
+            log_ingress_level: ingress,
+            log_egress_args,
+            params: skip,
+        })
+
     }
 }
 
@@ -78,16 +172,34 @@ impl Args {
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn logcall(
-    args: proc_macro::TokenStream,
-    item: proc_macro::TokenStream,
+    macro_args_tokens: proc_macro::TokenStream,
+    fn_tokens: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let input = syn::parse_macro_input!(item as ItemFn);
-    let args = Args::parse(syn::parse_macro_input!(args as AttributeArgs));
+    let fn_item = syn::parse_macro_input!(fn_tokens as ItemFn);
+    let macro_args = syn::parse_macro_input!(macro_args_tokens as MacroArgs);
+
+    let fn_name = fn_item.sig.ident.to_string();
+    let fn_args = fn_item
+        .sig
+        .inputs
+        .iter()
+        .cloned()
+        .map(|arg| match arg {
+            FnArg::Receiver(arg) => arg.self_token.into(),
+            FnArg::Typed(pat_type) => {
+                if let Pat::Ident(ident) = *pat_type.pat {
+                    ident.ident
+                } else {
+                    panic!("Unknown parameter declaration for {:?}", pat_type);
+                }
+            }
+        })
+        .collect();
 
     // check for async_trait-like patterns in the block, and instrument
     // the future instead of the wrapper
     let func_body = if let Some(internal_fun) =
-        get_async_trait_info(&input.block, input.sig.asyncness.is_some())
+        get_async_trait_info(&fn_item.block, fn_item.sig.asyncness.is_some())
     {
         // let's rewrite some statements!
         match internal_fun.kind {
@@ -101,13 +213,20 @@ pub fn logcall(
             AsyncTraitKind::Async(async_expr) => {
                 // fallback if we couldn't find the '__async_trait' binding, might be
                 // useful for crates exhibiting the same behaviors as async-trait
-                let instrumented_block = gen_block(
-                    &async_expr.block,
-                    true,
-                    false,
-                    &input.sig.ident.to_string(),
-                    args,
-                );
+                let instrumented_block =
+                    gen_ingress_block(
+                        gen_egress_block(
+                            &async_expr.block,
+                            true,
+                            false,
+                            &fn_name,
+                            &fn_args,
+                            &macro_args,
+                        ),
+                        &fn_name,
+                        &fn_args,
+                        &macro_args,
+                    );
                 let async_attrs = &async_expr.attrs;
                 quote! {
                     Box::pin(#(#async_attrs) * #instrumented_block )
@@ -115,18 +234,24 @@ pub fn logcall(
             }
         }
     } else {
-        gen_block(
-            &input.block,
-            input.sig.asyncness.is_some(),
-            input.sig.asyncness.is_some(),
-            &input.sig.ident.to_string(),
-            args,
+        gen_ingress_block(
+            gen_egress_block(
+                &fn_item.block,
+                fn_item.sig.asyncness.is_some(),
+                fn_item.sig.asyncness.is_some(),
+                &fn_name,
+                &fn_args,
+                &macro_args,
+            ),
+            &fn_name,
+            &fn_args,
+            &macro_args
         )
     };
 
     let ItemFn {
         attrs, vis, sig, ..
-    } = input;
+    } = fn_item;
 
     let Signature {
         output: return_type,
@@ -156,20 +281,45 @@ pub fn logcall(
     .into()
 }
 
-/// Instrument a block
-fn gen_block(
+/// Instrument when entering a block
+fn gen_ingress_block(
+    block: TokenStream,
+    fn_name: &str,
+    fn_args: &Vec<Ident>,
+    macro_args: &MacroArgs,
+) -> proc_macro2::TokenStream {
+    let Some(ref log_ingress_level) =
+        macro_args.log_ingress_level
+    else {
+        return block.to_token_stream()
+    };
+    let log = gen_ingress_log(&log_ingress_level, fn_name, &fn_args, &macro_args.params);
+    quote_spanned!(block.span()=>
+        #log;
+        #block
+    )
+}
+
+/// Instrument when exiting a block
+fn gen_egress_block(
     block: &Block,
     async_context: bool,
     async_keyword: bool,
     fn_name: &str,
-    args: Args,
+    fn_args: &Vec<Ident>,
+    macro_args: &MacroArgs,
 ) -> proc_macro2::TokenStream {
-    match args {
-        Args::Simple { level } => {
+    let Some(ref log_egress_args) =
+        macro_args.log_egress_args
+    else {
+        return block.to_token_stream()
+    };
+    match log_egress_args {
+        LogEgressArgs::Simple { level } => {
             // Generate the instrumented function body.
             // If the function is an `async fn`, this will wrap it in an async block.
             if async_context {
-                let log = gen_log(&level, fn_name, "__ret_value");
+                let log = gen_egress_log(&level, fn_name, &fn_args, &macro_args.params, "__ret_value");
                 let block = quote_spanned!(block.span()=>
                     async move {
                         let __ret_value = async move { #block }.await;
@@ -186,7 +336,7 @@ fn gen_block(
                     block
                 }
             } else {
-                let log = gen_log(&level, fn_name, "__ret_value");
+                let log = gen_egress_log(&level, fn_name, &fn_args, &macro_args.params, "__ret_value");
                 quote_spanned!(block.span()=>
                     #[allow(unknown_lints)]
                     #[allow(clippy::redundant_closure_call)]
@@ -196,12 +346,12 @@ fn gen_block(
                 )
             }
         }
-        Args::Result {
+        LogEgressArgs::Result {
             ok_level,
             err_level,
         } => {
             let ok_arm = if let Some(ok_level) = ok_level {
-                let log_ok = gen_log(&ok_level, fn_name, "__ret_value");
+                let log_ok = gen_egress_log(&ok_level, fn_name, &fn_args, &macro_args.params, "__ret_value");
                 quote_spanned!(block.span()=>
                     __ret_value@Ok(_) => {
                         #log_ok;
@@ -214,7 +364,7 @@ fn gen_block(
                 )
             };
             let err_arm = if let Some(err_level) = err_level {
-                let log_err = gen_log(&err_level, fn_name, "__ret_value");
+                let log_err = gen_egress_log(&err_level, fn_name, &fn_args, &macro_args.params, "__ret_value");
                 quote_spanned!(block.span()=>
                     __ret_value@Err(_) => {
                         #log_err;
@@ -262,16 +412,67 @@ fn gen_block(
     }
 }
 
-fn gen_log(level: &str, fn_name: &str, return_value: &str) -> proc_macro2::TokenStream {
+fn gen_ingress_log(level: &str, fn_name: &str, param_names: &Vec<Ident>, params_to_skip: &Option<Vec<String>>) -> TokenStream {
     let level = level.to_lowercase();
     if !["error", "warn", "info", "debug", "trace"].contains(&level.as_str()) {
-        abort_call_site!("unknown log level");
+        abort_call_site!("unknown log level '{}'", level);
+    }
+    let level: Ident = Ident::new(&level, Span::call_site());
+    let mut fmt = String::from("<= {}(");
+    let (input_params, input_values) = build_input_format_arguments(param_names, params_to_skip.as_ref().unwrap_or(&param_names.iter().map(|ident| ident.to_string()).collect()));
+    fmt.push_str(&input_params);
+    fmt.push_str("):");
+// panic!("ingress FORMAT: #fmt: {}, #fn_name: {}, #input_values: {:?}", fmt, fn_name, input_values);
+    quote!(
+        ::log::#level! (#fmt, #fn_name, #input_values)
+    )
+}
+
+fn gen_egress_log(level: &str, fn_name: &str, param_names: &Vec<Ident>, params_to_skip: &Option<Vec<String>>, return_value: &str) -> TokenStream {
+    let level = level.to_lowercase();
+    if !["error", "warn", "info", "debug", "trace"].contains(&level.as_str()) {
+        abort_call_site!("unknown log level '{}'", level);
     }
     let level: Ident = Ident::new(&level, Span::call_site());
     let return_value: Ident = Ident::new(return_value, Span::call_site());
+    let mut fmt = String::from("{}(");
+    let (input_params, input_values) = build_input_format_arguments(param_names, params_to_skip.as_ref().unwrap_or(&param_names.iter().map(|ident| ident.to_string()).collect()));
+    fmt.push_str(&input_params);
+    fmt.push_str(") => {:?}");
+// panic!("egress FORMAT: #fmt: {}, #fn_name: {}, #input_values: {:?}, &#return_value: {}", fmt, fn_name, input_values, &return_value);
     quote!(
-        log::#level! ("{}() => {:?}", #fn_name, &#return_value)
+        ::log::#level! (#fmt, #fn_name, #input_values /*notice the missing comma*/ &#return_value)
     )
+}
+
+/// Builds the arguments to be used in `format!()`.
+/// Returns: (format_placeholders, format_values)
+/// Caveat: `format_values` is a `TokenStream` with an extra comma, for coding simplicity -- meaning no comma should be placed after it, when using it in `quote!()`
+fn build_input_format_arguments(param_idents: &Vec<Ident>, to_skip: &Vec<String>)
+                                -> (/*format_placeholders: */String, /*format_values: */TokenStream) {
+    let format_placeholders = param_idents.iter().enumerate()
+        .map(|(param_index, param_ident)| {
+            let param_name = param_ident.to_string();
+            let placeholder = if to_skip.contains(&param_name) {
+                "<skipped>"
+            } else {
+                // the param will be serialized with `debug`
+                "{:?}"
+            };
+            let placeholder_separator = if param_index>0 {", "} else {""};
+            let format_placeholder = format!("{placeholder_separator}{param_name}: {placeholder}");
+            format_placeholder
+        })
+        .collect();
+    let format_values: Punctuated<Ident, Comma> = param_idents.iter().cloned()
+        .filter(|param_ident| !to_skip.contains(&param_ident.to_string()))
+        .collect();
+    let format_values = if format_values.len() == 0 {
+        format_values.to_token_stream()
+    } else {
+        quote!(#format_values, /* notice the leading comma */)
+    };
+    (format_placeholders, format_values)
 }
 
 enum AsyncTraitKind<'a> {
@@ -325,7 +526,7 @@ fn get_async_trait_info(block: &Block, block_is_async: bool) -> Option<AsyncTrai
     // `trait` or `impl` declaration is annotated by async_trait,
     // this is quite likely the point where the future is pinned)
     let (last_expr_stmt, last_expr) = block.stmts.iter().rev().find_map(|stmt| {
-        if let Stmt::Expr(expr) = stmt {
+        if let Stmt::Expr(expr, _token) = stmt {
             Some((stmt, expr))
         } else {
             None
