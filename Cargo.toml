@@ -17,7 +17,6 @@ proc-macro = true
 [features]
 structured-logging = []     # if enabled, user crates should depend on `structured-logger`
 format-display = []         # if enabled, cause the log! messages to serialize values with '{}' instead of '{:?}'
-#structured-logging = ["structured-logger"]     # if enabled, user crates should depend on `structured-logger`
 
 default=["structured-logging"]
 

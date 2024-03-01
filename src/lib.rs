@@ -442,7 +442,7 @@ fn gen_ingress_log(
     let level: Ident = Ident::new(&level, Span::call_site());
     let params_to_skip = params_to_skip
         .as_ref()
-        .map(|vec_ref| vec_ref.clone())
+        .cloned()
         .unwrap_or(param_names.iter().map(|ident| ident.to_string()).collect());
     let mut fmt = String::from("<= {}(");   // `fn_name`
     let (input_params, input_values) = build_input_format_arguments(
@@ -486,7 +486,7 @@ fn gen_egress_log(
     let return_value_ident: Ident = Ident::new(return_value_name, Span::call_site());
     let params_to_skip = params_to_skip
         .as_ref()
-        .map(|vec_ref| vec_ref.clone())
+        .cloned()
         .unwrap_or(param_names.iter().map(|ident| ident.to_string()).collect());
     let mut fmt = String::from("{}(");  // `fn_name`
     let (input_params, input_values) = build_input_format_arguments(
@@ -507,9 +507,9 @@ fn gen_egress_log(
     }
     #[cfg(feature="structured-logging")]
     {
-        let mut ret_fmt = format!("{}{}{}", return_value_prefix, FORMAT_PLACEHOLDER, return_value_suffix);  // serialize the return value -- as of 2024-03-01, both `log` & `structured-logger` have a bug
-                                                                                                                   // preventing serialization of a `Result` type. This line, together with using "__serialized_ret"
-                                                                                                                   // works around this
+        let ret_fmt = format!("{}{}{}", return_value_prefix, FORMAT_PLACEHOLDER, return_value_suffix);  // serialize the return value -- as of 2024-03-01, both `log` & `structured-logger` have a bug
+                                                                                                              // preventing serialization of a `Result` type. This line, together with using "__serialized_ret"
+                                                                                                              // works around this
         let structured_values_tokens = build_structured_logger_arguments(param_names, &params_to_skip, Some(&Ident::new("__serialized_ret", Span::call_site())));
         quote!(
             let __serialized_ret = format!(#ret_fmt, &#return_value_ident);                                         // part of the workaround described above
@@ -570,7 +570,7 @@ fn build_structured_logger_arguments(
     let mut tokens: TokenStream = param_idents
         .iter()
         .map(|param_ident| (param_ident, param_ident.to_string()))
-        .filter(|(param_ident, param_name)| !to_skip.contains(&param_name))
+        .filter(|(_param_ident, param_name)| !to_skip.contains(param_name))
         .map(|(param_ident, param_name)| quote!(#param_name=#param_ident, ))
         .collect();
     if let Some(return_param_ident) = return_param_ident {
