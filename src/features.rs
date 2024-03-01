@@ -7,14 +7,8 @@ pub const FORMAT_PLACEHOLDER: &str = "{:?}";
 #[cfg(feature="format-display")]
 pub const FORMAT_PLACEHOLDER: &str = "{}";
 
-// #[!cfg(feature="structured-logger")]
-// const fn log() -> TokenStream {
-//     quote! {
-//         ::log::log!(#level, #fmt, #items);
-//     }
-// }
+// #[cfg(feature="structured-logging")]
+// pub const LOG_TRAILING_SEPARATOR: char = ';';
+// #[cfg(not(feature="structured-logging"))]
+// pub const LOG_TRAILING_SEPARATOR: char = ',';
 //
-// #[cfg(feature="structured-logger")]
-// fn log() -> TokenStream {
-//     quote!()
-// }

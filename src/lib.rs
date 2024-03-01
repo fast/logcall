@@ -13,7 +13,8 @@ extern crate proc_macro;
 #[macro_use]
 extern crate proc_macro_error;
 
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::Spacing;
+use proc_macro2::{Punct, Span, TokenStream, TokenTree};
 use quote::{quote_spanned, ToTokens};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
@@ -272,6 +273,7 @@ pub fn logcall(
         ..
     } = sig;
 
+    // let s =
     quote::quote!(
         #(#attrs) *
         #vis #constness #unsafety #asyncness #abi fn #ident<#gen_params>(#params) #return_type
@@ -281,6 +283,9 @@ pub fn logcall(
         }
     )
     .into()
+    //     .into_token_stream()
+    //     .to_string();
+    // panic!("{}", s)
 }
 
 /// Instrument when entering a block
@@ -439,19 +444,31 @@ fn gen_ingress_log(
         abort_call_site!("unknown log level '{}'", level);
     }
     let level: Ident = Ident::new(&level, Span::call_site());
+    let params_to_skip = params_to_skip
+        .as_ref()
+        .map(|vec_ref| vec_ref.clone())
+        .unwrap_or(param_names.iter().map(|ident| ident.to_string()).collect());
     let mut fmt = String::from("<= {}(");   // `fn_name`
     let (input_params, input_values) = build_input_format_arguments(
         param_names,
-        params_to_skip
-            .as_ref()
-            .unwrap_or(&param_names.iter().map(|ident| ident.to_string()).collect()),
+        &params_to_skip,
     );
     fmt.push_str(&input_params);
     fmt.push_str("):");
-// abort_call_site!("ingress FORMAT: #fmt: {}, #fn_name: {}, #input_values: {:?}", fmt, fn_name, input_values);
-    quote!(
-        ::log::#level! (#fmt, #fn_name, #input_values)
-    )
+
+    #[cfg(not(feature="structured-logging"))]
+    {
+        quote!(
+            ::log::#level! (#fmt, #fn_name, #input_values)
+        )
+    }
+    #[cfg(feature="structured-logging")]
+    {
+        let structured_values_tokens = build_structured_logger_arguments(param_names, &params_to_skip, None);
+        quote!(
+            ::log::#level! (#structured_values_tokens #fmt, #fn_name, #input_values)
+        )
+    }
 }
 
 fn gen_egress_log(
@@ -459,7 +476,7 @@ fn gen_egress_log(
     fn_name: &str,
     param_names: &[Ident],
     params_to_skip: &Option<Vec<String>>,
-    return_value: &str,
+    return_value_name: &str,
     // the following 2 parameters allow showing `Result`s even if using the `format-display` feature,
     // as `Result` can only be directly formatted with either {:?} or {:#?}
     return_value_prefix: &str,
@@ -470,23 +487,36 @@ fn gen_egress_log(
         abort_call_site!("unknown log level '{}'", level);
     }
     let level: Ident = Ident::new(&level, Span::call_site());
-    let return_value: Ident = Ident::new(return_value, Span::call_site());
+    let return_value_ident: Ident = Ident::new(return_value_name, Span::call_site());
+    let params_to_skip = params_to_skip
+        .as_ref()
+        .map(|vec_ref| vec_ref.clone())
+        .unwrap_or(param_names.iter().map(|ident| ident.to_string()).collect());
     let mut fmt = String::from("{}(");  // `fn_name`
     let (input_params, input_values) = build_input_format_arguments(
         param_names,
-        params_to_skip
-            .as_ref()
-            .unwrap_or(&param_names.iter().map(|ident| ident.to_string()).collect()),
+        &params_to_skip,
     );
     fmt.push_str(&input_params);
     fmt.push_str(") => ");
     fmt.push_str(return_value_prefix);
     fmt.push_str(FORMAT_PLACEHOLDER);   // `return_value`
     fmt.push_str(return_value_suffix);
-// abort_call_site!("egress FORMAT: #fmt: {}, #fn_name: {}, #input_values: {:?}, &#return_value: {}", fmt, fn_name, input_values, &return_value);
-    quote!(
-        ::log::#level! (#fmt, #fn_name, #input_values /*notice the missing comma*/ &#return_value)
-    )
+
+    #[cfg(not(feature="structured-logging"))]
+    {
+        quote!(
+            ::log::#level! (#fmt, #fn_name, #input_values /*notice the missing comma*/ &#return_value_ident)
+        )
+    }
+    #[cfg(feature="structured-logging")]
+    {
+        let structured_values_tokens = build_structured_logger_arguments(param_names, &params_to_skip, Some(&return_value_ident));
+        quote!(
+            ::log::#level! (#structured_values_tokens #fmt, #fn_name, #input_values /*notice the missing comma*/ &#return_value_ident)
+        )
+    }
+
 }
 
 /// Builds the arguments to be used in `format!()`.
@@ -520,12 +550,46 @@ fn build_input_format_arguments(
         .filter(|param_ident| !to_skip.contains(&param_ident.to_string()))
         .cloned()
         .collect();
-    let format_values = if format_values.is_empty() {
-        format_values.to_token_stream()
-    } else {
-        quote!(#format_values, /* notice the leading comma */)
-    };
-    (format_placeholders, format_values)
+    let mut format_values = format_values.to_token_stream();
+    if !format_values.is_empty() {
+        format_values.extend(Punct::new(',', Spacing::Alone).to_token_stream());
+    }
+    (format_placeholders, format_values.to_token_stream())
+}
+
+/// Builds a token stream in the form
+///   a:a, b:b, ..., ret:return_val,
+/// suitable for use in the log! macros, as enabled
+/// by the `structured-logger` crate.
+/// CAVEAT: notice the trailing ';'
+fn build_structured_logger_arguments(
+    param_idents: &[Ident],
+    to_skip: &[String],
+    return_param_ident: Option<&Ident>
+) -> TokenStream {
+    let mut tokens: TokenStream = param_idents
+        .iter()
+        .map(|param_ident| (param_ident, param_ident.to_string()))
+        .filter(|(param_ident, param_name)| !to_skip.contains(&param_name))
+        .map(|(param_ident, param_name)| quote!(#param_name=#param_ident, ))
+        .collect();
+    if let Some(return_param_ident) = return_param_ident {
+        tokens.extend(quote!("ret"="&#return_param_ident", ));
+    }
+
+    // replace the trailing ',' for ';', as required by `structured-logger`.
+    // NOTE: not optimal code ahead (as the whole stream will be loaded into RAM),
+    // but the stream will be small anyway, so it will be like this for now
+
+    let mut tokens_vec: Vec<TokenTree> = tokens.into_iter().collect();
+
+    if let Some(TokenTree::Punct(punct)) = tokens_vec.last() {
+        if punct.as_char() == ',' {
+            tokens_vec.pop();
+            tokens_vec.push(TokenTree::Punct(Punct::new(';', Spacing::Alone)));
+        }
+    }
+    tokens_vec.into_iter().collect()
 }
 
 enum AsyncTraitKind<'a> {

@@ -112,9 +112,7 @@ impl LegacyAsyncTrait for LegacyAsync {
 
 #[tokio::main]
 async fn main() {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .init();
+    structured_logger::Builder::new().init();
 
     println!("####  SYNC DEMO  ####");
 
