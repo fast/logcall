@@ -13,6 +13,7 @@ extern crate proc_macro;
 #[macro_use]
 extern crate proc_macro_error;
 
+use crate::features::FORMAT_PLACEHOLDER;
 use proc_macro2::Spacing;
 use proc_macro2::{Punct, Span, TokenStream, TokenTree};
 use quote::{quote_spanned, ToTokens};
@@ -21,7 +22,6 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::Comma;
 use syn::*;
-use crate::features::FORMAT_PLACEHOLDER;
 
 /// Contains the internal representation of this proc-macro arguments.
 /// See [MacroArgs::parse()] for more info.
@@ -110,7 +110,9 @@ impl Parse for MacroArgs {
                 let skip = skip.insert(Vec::new());
                 for pair in expr_array.elems.pairs() {
                     let Expr::Path(path) = pair.value() else {
-                        abort_call_site!("unknown element type -- `skip` must be an array of identifiers");
+                        abort_call_site!(
+                            "unknown element type -- `skip` must be an array of identifiers"
+                        );
                     };
                     let ident = path.to_token_stream().to_string();
                     skip.push(ident);
@@ -318,8 +320,15 @@ fn gen_egress_block(
             // Generate the instrumented function body.
             // If the function is an `async fn`, this will wrap it in an async block.
             if async_context {
-                let log =
-                    gen_egress_log(level, fn_name, fn_args, &macro_args.params, "__ret_value", "", "");
+                let log = gen_egress_log(
+                    level,
+                    fn_name,
+                    fn_args,
+                    &macro_args.params,
+                    "__ret_value",
+                    "",
+                    "",
+                );
                 let block = quote_spanned!(block.span()=>
                     async move {
                         let __ret_value = async move { #block }.await;
@@ -336,8 +345,15 @@ fn gen_egress_block(
                     block
                 }
             } else {
-                let log =
-                    gen_egress_log(level, fn_name, fn_args, &macro_args.params, "__ret_value", "", "");
+                let log = gen_egress_log(
+                    level,
+                    fn_name,
+                    fn_args,
+                    &macro_args.params,
+                    "__ret_value",
+                    "",
+                    "",
+                );
                 quote_spanned!(block.span()=>
                     #[allow(unknown_lints)]
                     #[allow(clippy::redundant_closure_call)]
@@ -359,7 +375,7 @@ fn gen_egress_block(
                     &macro_args.params,
                     "__ok_value",
                     "Ok(",
-                    ")"
+                    ")",
                 );
                 quote_spanned!(block.span()=>
                     Ok(__ok_value) => {
@@ -379,7 +395,7 @@ fn gen_egress_block(
                     &macro_args.params,
                     "__err_value",
                     "Err(",
-                    ")"
+                    ")",
                 );
                 quote_spanned!(block.span()=>
                     Err(__err_value) => {
@@ -444,23 +460,21 @@ fn gen_ingress_log(
         .as_ref()
         .cloned()
         .unwrap_or(param_names.iter().map(|ident| ident.to_string()).collect());
-    let mut fmt = String::from("<= {}(");   // `fn_name`
-    let (input_params, input_values) = build_input_format_arguments(
-        param_names,
-        &params_to_skip,
-    );
+    let mut fmt = String::from("<= {}("); // `fn_name`
+    let (input_params, input_values) = build_input_format_arguments(param_names, &params_to_skip);
     fmt.push_str(&input_params);
     fmt.push_str("):");
 
-    #[cfg(not(feature="structured-logging"))]
+    #[cfg(not(feature = "structured-logging"))]
     {
         quote!(
             ::log::#level! (#fmt, #fn_name, #input_values)
         )
     }
-    #[cfg(feature="structured-logging")]
+    #[cfg(feature = "structured-logging")]
     {
-        let structured_values_tokens = build_structured_logger_arguments(param_names, &params_to_skip, None);
+        let structured_values_tokens =
+            build_structured_logger_arguments(param_names, &params_to_skip, None);
         quote!(
             ::log::#level! (#structured_values_tokens #fmt, #fn_name, #input_values)
         )
@@ -488,35 +502,38 @@ fn gen_egress_log(
         .as_ref()
         .cloned()
         .unwrap_or(param_names.iter().map(|ident| ident.to_string()).collect());
-    let mut fmt = String::from("{}(");  // `fn_name`
-    let (input_params, input_values) = build_input_format_arguments(
-        param_names,
-        &params_to_skip,
-    );
+    let mut fmt = String::from("{}("); // `fn_name`
+    let (input_params, input_values) = build_input_format_arguments(param_names, &params_to_skip);
     fmt.push_str(&input_params);
     fmt.push_str(") => ");
     fmt.push_str(return_value_prefix);
-    fmt.push_str(FORMAT_PLACEHOLDER);   // `return_value`
+    fmt.push_str(FORMAT_PLACEHOLDER); // `return_value`
     fmt.push_str(return_value_suffix);
 
-    #[cfg(not(feature="structured-logging"))]
+    #[cfg(not(feature = "structured-logging"))]
     {
         quote!(
             ::log::#level! (#fmt, #fn_name, #input_values /*notice the missing comma*/ &#return_value_ident)
         )
     }
-    #[cfg(feature="structured-logging")]
+    #[cfg(feature = "structured-logging")]
     {
-        let ret_fmt = format!("{}{}{}", return_value_prefix, FORMAT_PLACEHOLDER, return_value_suffix);  // serialize the return value -- as of 2024-03-01, both `log` & `structured-logger` have a bug
-                                                                                                              // preventing serialization of a `Result` type. This line, together with using "__serialized_ret"
-                                                                                                              // works around this
-        let structured_values_tokens = build_structured_logger_arguments(param_names, &params_to_skip, Some(&Ident::new("__serialized_ret", Span::call_site())));
+        let ret_fmt = format!(
+            "{}{}{}",
+            return_value_prefix, FORMAT_PLACEHOLDER, return_value_suffix
+        ); // serialize the return value -- as of 2024-03-01, both `log` & `structured-logger` have a bug
+           // preventing serialization of a `Result` type. This line, together with using "__serialized_ret"
+           // works around this
+        let structured_values_tokens = build_structured_logger_arguments(
+            param_names,
+            &params_to_skip,
+            Some(&Ident::new("__serialized_ret", Span::call_site())),
+        );
         quote!(
             let __serialized_ret = format!(#ret_fmt, &#return_value_ident);                                         // part of the workaround described above
             ::log::#level! (#structured_values_tokens #fmt, #fn_name, #input_values /*notice the missing comma*/ &#return_value_ident)
         )
     }
-
 }
 
 /// Builds the arguments to be used in `format!()`.
@@ -565,7 +582,7 @@ fn build_input_format_arguments(
 fn build_structured_logger_arguments(
     param_idents: &[Ident],
     to_skip: &[String],
-    return_param_ident: Option<&Ident>
+    return_param_ident: Option<&Ident>,
 ) -> TokenStream {
     let mut tokens: TokenStream = param_idents
         .iter()
