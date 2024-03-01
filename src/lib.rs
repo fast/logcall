@@ -511,8 +511,13 @@ fn gen_egress_log(
     }
     #[cfg(feature="structured-logging")]
     {
-        let structured_values_tokens = build_structured_logger_arguments(param_names, &params_to_skip, Some(&return_value_ident));
+        let mut ret_fmt = String::new();
+        ret_fmt.push_str(return_value_prefix);
+        ret_fmt.push_str(FORMAT_PLACEHOLDER);   // `return_value`
+        ret_fmt.push_str(return_value_suffix);
+        let structured_values_tokens = build_structured_logger_arguments(param_names, &params_to_skip, Some(&Ident::new("__serialized_ret", Span::call_site())));
         quote!(
+            let __serialized_ret = format!(#ret_fmt, &#return_value_ident);
             ::log::#level! (#structured_values_tokens #fmt, #fn_name, #input_values /*notice the missing comma*/ &#return_value_ident)
         )
     }
@@ -574,7 +579,7 @@ fn build_structured_logger_arguments(
         .map(|(param_ident, param_name)| quote!(#param_name=#param_ident, ))
         .collect();
     if let Some(return_param_ident) = return_param_ident {
-        tokens.extend(quote!("ret"="&#return_param_ident", ));
+        tokens.extend(quote!("ret"=&#return_param_ident, ));
     }
 
     // replace the trailing ',' for ';', as required by `structured-logger`.
