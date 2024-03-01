@@ -273,7 +273,6 @@ pub fn logcall(
         ..
     } = sig;
 
-    // let s =
     quote::quote!(
         #(#attrs) *
         #vis #constness #unsafety #asyncness #abi fn #ident<#gen_params>(#params) #return_type
@@ -283,9 +282,6 @@ pub fn logcall(
         }
     )
     .into()
-    //     .into_token_stream()
-    //     .to_string();
-    // panic!("{}", s)
 }
 
 /// Instrument when entering a block
@@ -511,13 +507,12 @@ fn gen_egress_log(
     }
     #[cfg(feature="structured-logging")]
     {
-        let mut ret_fmt = String::new();
-        ret_fmt.push_str(return_value_prefix);
-        ret_fmt.push_str(FORMAT_PLACEHOLDER);   // `return_value`
-        ret_fmt.push_str(return_value_suffix);
+        let mut ret_fmt = format!("{}{}{}", return_value_prefix, FORMAT_PLACEHOLDER, return_value_suffix);  // serialize the return value -- as of 2024-03-01, both `log` & `structured-logger` have a bug
+                                                                                                                   // preventing serialization of a `Result` type. This line, together with using "__serialized_ret"
+                                                                                                                   // works around this
         let structured_values_tokens = build_structured_logger_arguments(param_names, &params_to_skip, Some(&Ident::new("__serialized_ret", Span::call_site())));
         quote!(
-            let __serialized_ret = format!(#ret_fmt, &#return_value_ident);
+            let __serialized_ret = format!(#ret_fmt, &#return_value_ident);                                         // part of the workaround described above
             ::log::#level! (#structured_values_tokens #fmt, #fn_name, #input_values /*notice the missing comma*/ &#return_value_ident)
         )
     }
