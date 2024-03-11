@@ -107,7 +107,7 @@ impl Parse for MacroArgs {
                 let Expr::Array(expr_array) = name_value.value.clone() else {
                     abort_call_site!("`skip` parameter, if present, should be an array of identifiers: skip=[a,b,c,...]");
                 };
-                let skip = skip.insert(Vec::new());
+                let skip = skip.get_or_insert_with(|| Vec::new());
                 for pair in expr_array.elems.pairs() {
                     let Expr::Path(path) = pair.value() else {
                         abort_call_site!(
