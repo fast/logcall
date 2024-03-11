@@ -14,22 +14,31 @@ license = "MIT"
 [lib]
 proc-macro = true
 
+[features]
+structured-logging = []     # if enabled, user crates should depend on `structured-logger`
+format-display = []         # if enabled, cause the log! messages to serialize values with '{}' instead of '{:?}'
+
+default=["structured-logging"]
+
 [dependencies]
 proc-macro-error = "1"
 proc-macro2 = "1"
 quote = "1"
-# The macro `quote_spanned!` is added to syn in 1.0.84
-syn = { version = "1.0.84", features = [
-  "full",
-  "parsing",
-  "extra-traits",
-  "proc-macro",
-  "visit-mut",
+syn = { version = "2", features = [
+    "full",
+    "parsing",
+    "extra-traits",
+    "proc-macro",
+    "visit-mut",
+    "visit",
+    "fold",
+    "printing",
 ] }
 
 [dev-dependencies]
 trybuild = "1"
 log = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-env_logger = "0.10.0"
-async-trait = "0.1.70"
+structured-logger = "1"
+async-trait = "0.1"
+

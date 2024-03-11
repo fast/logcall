@@ -1,4 +1,4 @@
-error: unknown log level
+error: unknown log level 'foo'
  --> tests/ui/err/wrong-level.rs:1:1
   |
 1 | #[logcall::logcall("foo")]
