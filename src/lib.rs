@@ -13,7 +13,7 @@ extern crate proc_macro;
 #[macro_use]
 extern crate proc_macro_error;
 
-use crate::features::FORMAT_PLACEHOLDER;
+use crate::features::{FEATURE_FORMAT_DISPLAY, FORMAT_PLACEHOLDER};
 use proc_macro2::Spacing;
 use proc_macro2::{Punct, Span, TokenStream, TokenTree};
 use quote::{quote_spanned, ToTokens};
@@ -107,7 +107,7 @@ impl Parse for MacroArgs {
                 let Expr::Array(expr_array) = name_value.value.clone() else {
                     abort_call_site!("`skip` parameter, if present, should be an array of identifiers: skip=[a,b,c,...]");
                 };
-                let skip = skip.get_or_insert_with(|| Vec::new());
+                let skip = skip.get_or_insert_with(Vec::new);
                 for pair in expr_array.elems.pairs() {
                     let Expr::Path(path) = pair.value() else {
                         abort_call_site!(
@@ -575,9 +575,10 @@ fn build_input_format_arguments(
 }
 
 /// Builds a token stream in the form
-///   a:a, b:b, ..., ret:return_val,
+///   a:?=a, b:?=b, ..., ret:?=return_val,
 /// suitable for use in the log! macros, as enabled
 /// by the `structured-logger` crate.
+/// NOTE: the alternative name:%=val form will be used if the `format-display` feature is enabled
 /// CAVEAT: notice the trailing ';'
 fn build_structured_logger_arguments(
     param_idents: &[Ident],
@@ -588,10 +589,14 @@ fn build_structured_logger_arguments(
         .iter()
         .map(|param_ident| (param_ident, param_ident.to_string()))
         .filter(|(_param_ident, param_name)| !to_skip.contains(param_name))
-        .map(|(param_ident, param_name)| quote!(#param_name=#param_ident, ))
+        .map(|(param_ident, param_name)| if FEATURE_FORMAT_DISPLAY {
+            quote!(#param_name:%=#param_ident, )
+        } else {
+            quote!(#param_name:?=#param_ident, )
+        })
         .collect();
     if let Some(return_param_ident) = return_param_ident {
-        tokens.extend(quote!("ret"=&#return_param_ident, ));
+        tokens.extend(quote!("ret"=&#return_param_ident, ));    // notice the function's return value `return_param_ident` comes in serialized already
     }
 
     // replace the trailing ',' for ';', as required by `structured-logger`.
@@ -611,7 +616,7 @@ fn build_structured_logger_arguments(
 
 enum AsyncTraitKind<'a> {
     // old construction. Contains the function
-    Function(&'a ItemFn),
+    Function(/*&'a ItemFn*/()),
     // new construction. Contains a reference to the async block
     Async(&'a ExprAsync),
 }
@@ -715,13 +720,13 @@ fn get_async_trait_info(block: &Block, block_is_async: bool) -> Option<AsyncTrai
 
     // Was that function defined inside of the current block?
     // If so, retrieve the statement where it was declared and the function itself
-    let (stmt_func_declaration, func) = inside_funs
+    let (stmt_func_declaration, _func) = inside_funs
         .into_iter()
         .find(|(_, fun)| fun.sig.ident == func_name)?;
 
     Some(AsyncTraitInfo {
         _source_stmt: stmt_func_declaration,
-        kind: AsyncTraitKind::Function(func),
+        kind: AsyncTraitKind::Function(/*_func*/()),
     })
 }
 

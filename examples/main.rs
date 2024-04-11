@@ -143,4 +143,12 @@ async fn main() {
     legacy_async.async_foo(4).await;
     legacy_async.async_bar(4).await.ok();
     legacy_async.async_baz(4).await.ok();
+
+    println!("####  CUSTOM TYPES  ####");
+
+    #[derive(Debug)]
+    struct MyType(String);
+    #[logcall(ingress = "info")]
+    fn use_my_type(my_param: MyType) {}
+    use_my_type(MyType(String::from("It works!")));
 }
