@@ -146,9 +146,23 @@ async fn main() {
 
     println!("####  CUSTOM TYPES  ####");
 
-    #[derive(Debug)]
+    #[derive(Debug,Clone)]
     struct MyType(String);
     #[logcall(ingress = "info")]
     fn use_my_type(my_param: MyType) {}
     use_my_type(MyType(String::from("It works!")));
+
+    println!("####  MOVE VALUE  ####");
+
+    #[logcall(egress = "info", ingress = "info")]
+    fn param_is_moved_before_logging_is_issued(moved_param: String) -> bool {
+        drop(moved_param);
+        true
+    }
+    param_is_moved_before_logging_is_issued(String::from("It will only work if log is serialized to a string before the function body runs"));
+
+    // params list should be serialized into a string before the method's body run
+    // egress log should be collected into a string if:
+
+
 }

@@ -23,6 +23,7 @@ use syn::spanned::Spanned;
 use syn::token::Comma;
 use syn::*;
 
+
 /// Contains the internal representation of this proc-macro arguments.
 /// See [MacroArgs::parse()] for more info.
 struct MacroArgs {
@@ -31,10 +32,26 @@ struct MacroArgs {
     /// If `None`, no function egress logging will be done
     log_egress_args: Option<LogEgressArgs>,
     /// If `None`, params for the function won't be logged.
-    /// If `Some`, parameters not in the list will be logged (through the `Debug` trait),
+    /// If `Some`, parameters not in the list will be logged,
     /// either in ingress, egress or both.
     /// If the list is `Some([])` (empty list), all the parameters will be logged.
     params: Option<Vec<String>>,
+}
+impl MacroArgs {
+
+    /// Returns `true` if the params should be collected to a String at function ingress.\
+    /// If so, logging of params must be done through the local variable [COLLECTED_PARAMS_IDENT_NAME].\
+    /// If `false`, logging of parameters is either disabled or should be done inline
+    fn should_clone_params(&self) -> bool {
+        true
+    }
+
+    fn gen_skip_params_list(&self, fn_args: &[Ident]) -> Vec<String> {
+        self.params
+            .as_ref()
+            .cloned()
+            .unwrap_or(fn_args.iter().map(|ident| ident.to_string()).collect())
+    }
 }
 
 /// Arguments for the "log on the egress of a function" feature
@@ -234,7 +251,7 @@ pub fn logcall(
                 );
                 let async_attrs = &async_expr.attrs;
                 quote! {
-                    Box::pin(#(#async_attrs) * #instrumented_block )
+                    Box::pin(#(#async_attrs) * { #instrumented_block } )
                 }
             }
         }
@@ -286,24 +303,26 @@ pub fn logcall(
     .into()
 }
 
-/// Instrument when entering a block
+/// Generates code to be executed before entering a function's block
 fn gen_ingress_block(
     block: TokenStream,
     fn_name: &str,
     fn_args: &[Ident],
     macro_args: &MacroArgs,
 ) -> TokenStream {
-    let Some(ref log_ingress_level) = macro_args.log_ingress_level else {
-        return block.to_token_stream();
-    };
-    let log = gen_ingress_log(log_ingress_level, fn_name, fn_args, &macro_args.params);
+    let collect_and_serialize = gen_ingress_clone_params(macro_args, fn_args);
+    let log = macro_args.log_ingress_level.as_ref()
+        .map(|log_ingress_level| gen_ingress_log(log_ingress_level, fn_name, fn_args, &macro_args.params));
+// panic!("CODE: {:?}",
     quote_spanned!(block.span()=>
-        #log;
+        #collect_and_serialize
+        #log
         #block
     )
+// .to_string());
 }
 
-/// Instrument when exiting a block
+/// Generates code to be executed after exiting a function's block
 fn gen_egress_block(
     block: &Block,
     async_context: bool,
@@ -445,6 +464,33 @@ fn gen_egress_block(
     }
 }
 
+fn gen_ingress_clone_params(macro_args: &MacroArgs, fn_args: &[Ident]) -> Option<TokenStream> {
+    macro_args.should_clone_params()
+        .then(|| {
+            let params_to_skip = macro_args.gen_skip_params_list(fn_args);
+            let wanted_params = build_wanted_params_list(fn_args, &params_to_skip);
+            let mut token_stream = TokenStream::new();
+            for wanted_param in wanted_params {
+                let cloned_ident = cloned_param_ident(&wanted_param);
+                let original_param_ident = param_ident(&wanted_param);
+                let new_tokens = quote! {
+                    let #cloned_ident = #original_param_ident.clone();
+                };
+                token_stream.extend(new_tokens)
+            }
+// panic!("quote: {:#?}",
+            token_stream
+// );
+        })
+}
+
+fn cloned_param_ident(param_name: &str) -> Ident {
+    Ident::new(&format!("__cloned_{param_name}"), Span::call_site())
+}
+fn param_ident(param_name: &str) -> Ident {
+    Ident::new(param_name, Span::call_site())
+}
+
 fn gen_ingress_log(
     level: &str,
     fn_name: &str,
@@ -476,7 +522,7 @@ fn gen_ingress_log(
         let structured_values_tokens =
             build_structured_logger_arguments(param_names, &params_to_skip, None);
         quote!(
-            ::log::#level! (#structured_values_tokens #fmt, #fn_name, #input_values)
+            ::log::#level! (#structured_values_tokens #fmt, #fn_name, #input_values);
         )
     }
 }
@@ -503,7 +549,7 @@ fn gen_egress_log(
         .cloned()
         .unwrap_or(param_names.iter().map(|ident| ident.to_string()).collect());
     let mut fmt = String::from("{}("); // `fn_name`
-    let (input_params, input_values) = build_input_format_arguments(param_names, &params_to_skip);
+    let (input_params, input_values) = build_cloned_input_format_arguments(param_names, &params_to_skip);
     fmt.push_str(&input_params);
     fmt.push_str(") => ");
     fmt.push_str(return_value_prefix);
@@ -524,7 +570,7 @@ fn gen_egress_log(
         ); // serialize the return value -- as of 2024-03-01, both `log` & `structured-logger` have a bug
            // preventing serialization of a `Result` type. This line, together with using "__serialized_ret"
            // works around this
-        let structured_values_tokens = build_structured_logger_arguments(
+        let structured_values_tokens = build_cloned_structured_logger_arguments(
             param_names,
             &params_to_skip,
             Some(&Ident::new("__serialized_ret", Span::call_site())),
@@ -574,6 +620,59 @@ fn build_input_format_arguments(
     (format_placeholders, format_values.to_token_stream())
 }
 
+/// Builds the arguments to be used in `format!()`.
+/// Returns: (format_placeholders, format_values)
+/// Caveat: `format_values` is a `TokenStream` with an extra comma, for coding simplicity -- meaning no comma should be placed after it, when using it in `quote!()`
+fn build_cloned_input_format_arguments(
+    param_idents: &[Ident],
+    to_skip: &[String],
+) -> (
+    /*format_placeholders: */ String,
+    /*format_values: */ TokenStream,
+) {
+    let format_placeholders = param_idents
+        .iter()
+        .enumerate()
+        .map(|(param_index, param_ident)| {
+            let param_name = param_ident.to_string();
+            let placeholder = if to_skip.contains(&param_name) {
+                "<skipped>"
+            } else {
+                // the format placeholder to serialize the param
+                FORMAT_PLACEHOLDER
+            };
+            let placeholder_separator = if param_index > 0 { ", " } else { "" };
+            let format_placeholder = format!("{placeholder_separator}{param_name}: {placeholder}");
+            format_placeholder
+        })
+        .collect();
+    let format_values: Punctuated<Ident, Comma> = param_idents
+        .iter()
+        .filter(|param_ident| !to_skip.contains(&param_ident.to_string()))
+        .map(|param_ident| cloned_param_ident(&param_ident.to_string()))
+        .collect();
+    let mut format_values = format_values.to_token_stream();
+    if !format_values.is_empty() {
+        format_values.extend(Punct::new(',', Spacing::Alone).to_token_stream());
+    }
+    (format_placeholders, format_values.to_token_stream())
+}
+
+/// Builds the list of arguments we want to log.
+fn build_wanted_params_list(
+    param_idents: &[Ident],
+    to_skip: &[String],
+) -> Vec<String> {
+    param_idents
+        .iter()
+        .filter_map(|param_ident| {
+            let param_name = param_ident.to_string();
+            (!to_skip.contains(&param_name))
+                .then(|| param_name)
+        })
+        .collect()
+}
+
 /// Builds a token stream in the form
 ///   a:?=a, b:?=b, ..., ret:?=return_val,
 /// suitable for use in the log! macros, as enabled
@@ -589,6 +688,41 @@ fn build_structured_logger_arguments(
         .iter()
         .map(|param_ident| (param_ident, param_ident.to_string()))
         .filter(|(_param_ident, param_name)| !to_skip.contains(param_name))
+        .map(|(param_ident, param_name)| if FEATURE_FORMAT_DISPLAY {
+            quote!(#param_name:%=#param_ident, )
+        } else {
+            quote!(#param_name:?=#param_ident, )
+        })
+        .collect();
+    if let Some(return_param_ident) = return_param_ident {
+        tokens.extend(quote!("ret"=&#return_param_ident, ));    // notice the function's return value `return_param_ident` comes in serialized already
+    }
+
+    // replace the trailing ',' for ';', as required by `structured-logger`.
+    // NOTE: not optimal code ahead (as the whole stream will be loaded into RAM),
+    // but the stream will be small anyway, so it will be like this for now
+
+    let mut tokens_vec: Vec<TokenTree> = tokens.into_iter().collect();
+
+    if let Some(TokenTree::Punct(punct)) = tokens_vec.last() {
+        if punct.as_char() == ',' {
+            tokens_vec.pop();
+            tokens_vec.push(TokenTree::Punct(Punct::new(';', Spacing::Alone)));
+        }
+    }
+    tokens_vec.into_iter().collect()
+}
+
+fn build_cloned_structured_logger_arguments(
+    param_idents: &[Ident],
+    to_skip: &[String],
+    return_param_ident: Option<&Ident>,
+) -> TokenStream {
+    let mut tokens: TokenStream = param_idents
+        .iter()
+        .map(|param_ident| (param_ident, param_ident.to_string()))
+        .filter(|(_param_ident, param_name)| !to_skip.contains(param_name))
+        .map(|(param_ident, param_name)| (cloned_param_ident(&param_name), param_name))
         .map(|(param_ident, param_name)| if FEATURE_FORMAT_DISPLAY {
             quote!(#param_name:%=#param_ident, )
         } else {
