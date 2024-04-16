@@ -172,7 +172,7 @@ async fn main() {
     struct MyFreakingType {
         works: String,
     }
-    #[logcall(egress = "error", skip=[])]
+    #[logcall(egress = "error", skip=[]/*, debug=true*/)]
     async fn param_is_moved_before_logging_is_issued_3(moved_param: MyFreakingType) -> Result<bool, ()> {
         drop(moved_param);
         Err(())?;

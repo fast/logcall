@@ -150,7 +150,7 @@ impl Parse for MacroArgs {
                 "ok" => ok.replace(value),
                 "ingress" => ingress.replace(value),
                 "egress" => egress.replace(value),
-                "debug" => egress.replace(value),
+                "debug" => debug.replace(value),
                 _ => abort_call_site!("Unknown `name` parameter in the `name=value` form: {}={}. Name must be `err`, `ok`, `ingress`, `egress`, `skip` or `debug`", name, value),
             };
         }
