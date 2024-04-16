@@ -36,6 +36,8 @@ struct MacroArgs {
     /// either in ingress, egress or both.
     /// If the list is `Some([])` (empty list), all the parameters will be logged.
     params: Option<Vec<String>>,
+    /// If specified, causes the expanded function code to be shown in a panic!, for inspection
+    debug: bool,
 }
 impl MacroArgs {
 
@@ -113,6 +115,7 @@ impl Parse for MacroArgs {
         let mut ingress = None;
         let mut egress = None;
         let mut skip = None;
+        let mut debug = None;
         let name_values = Punctuated::<MetaNameValue, Token![,]>::parse_terminated(args)?;
         for name_value in &name_values {
             let Some(name) = name_value.path.get_ident().map(|ident| ident.to_string()) else {
@@ -147,7 +150,8 @@ impl Parse for MacroArgs {
                 "ok" => ok.replace(value),
                 "ingress" => ingress.replace(value),
                 "egress" => egress.replace(value),
-                _ => abort_call_site!("Unknown `name` parameter in the `name=value` form: {}={}. Name must be `err`, `ok`, `ingress`, `egress` or `skip`", name, value),
+                "debug" => egress.replace(value),
+                _ => abort_call_site!("Unknown `name` parameter in the `name=value` form: {}={}. Name must be `err`, `ok`, `ingress`, `egress`, `skip` or `debug`", name, value),
             };
         }
 
@@ -187,6 +191,7 @@ impl Parse for MacroArgs {
             log_ingress_level: ingress,
             log_egress_args,
             params: skip,
+            debug: debug.map(|str_val| str_val == "true").unwrap_or(false),
         })
     }
 }
@@ -292,15 +297,18 @@ pub fn logcall(
         ..
     } = sig;
 
-    quote::quote!(
+    let tokens = quote::quote!(
         #(#attrs) *
         #vis #constness #unsafety #asyncness #abi fn #ident<#gen_params>(#params) #return_type
         #where_clause
         {
             #func_body
         }
-    )
-    .into()
+    );
+    if macro_args.debug {
+        panic!("`logcall` debug=true, so: FUNCTION is defined as:\n{}", tokens.to_string());
+    }
+    tokens.into()
 }
 
 /// Generates code to be executed before entering a function's block
@@ -668,7 +676,7 @@ fn build_wanted_params_list(
         .filter_map(|param_ident| {
             let param_name = param_ident.to_string();
             (!to_skip.contains(&param_name))
-                .then(|| param_name)
+                .then_some(param_name)
         })
         .collect()
 }

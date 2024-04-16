@@ -155,14 +155,29 @@ async fn main() {
     println!("####  MOVE VALUE  ####");
 
     #[logcall(egress = "info", ingress = "info")]
-    fn param_is_moved_before_logging_is_issued(moved_param: String) -> bool {
+    fn param_is_moved_before_logging_is_issued_1(moved_param: String) -> bool {
         drop(moved_param);
         true
     }
-    param_is_moved_before_logging_is_issued(String::from("It will only work if log is serialized to a string before the function body runs"));
+    param_is_moved_before_logging_is_issued_1(String::from("It will only work if log is serialized to a string before the function body runs"));
 
-    // params list should be serialized into a string before the method's body run
-    // egress log should be collected into a string if:
+    #[logcall(egress = "error", skip=[])]
+    fn param_is_moved_before_logging_is_issued_2(moved_param: String) -> Result<bool, ()> {
+        drop(moved_param);
+        Err(())
+    }
+    _ = param_is_moved_before_logging_is_issued_2(String::from("It will only work if log is serialized to a string before the function body runs"));
 
+    #[derive(Debug,Clone)]
+    struct MyFreakingType {
+        works: String,
+    }
+    #[logcall(egress = "error", skip=[])]
+    async fn param_is_moved_before_logging_is_issued_3(moved_param: MyFreakingType) -> Result<bool, ()> {
+        drop(moved_param);
+        Err(())?;
+        Ok(false)
+    }
+    _ = param_is_moved_before_logging_is_issued_3(MyFreakingType { works: String::from("It will only work if log is serialized to a string before the function body runs") }).await;
 
 }
