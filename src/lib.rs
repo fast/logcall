@@ -321,13 +321,11 @@ fn gen_ingress_block(
     let collect_and_serialize = gen_ingress_clone_params(macro_args, fn_args);
     let log = macro_args.log_ingress_level.as_ref()
         .map(|log_ingress_level| gen_ingress_log(log_ingress_level, fn_name, fn_args, &macro_args.params));
-// panic!("CODE: {:?}",
     quote_spanned!(block.span()=>
         #collect_and_serialize
         #log
         #block
     )
-// .to_string());
 }
 
 /// Generates code to be executed after exiting a function's block
@@ -486,9 +484,7 @@ fn gen_ingress_clone_params(macro_args: &MacroArgs, fn_args: &[Ident]) -> Option
                 };
                 token_stream.extend(new_tokens)
             }
-// panic!("quote: {:#?}",
             token_stream
-// );
         })
 }
 
@@ -515,7 +511,7 @@ fn gen_ingress_log(
         .cloned()
         .unwrap_or(param_names.iter().map(|ident| ident.to_string()).collect());
     let mut fmt = String::from("<= {}("); // `fn_name`
-    let (input_params, input_values) = build_input_format_arguments(param_names, &params_to_skip);
+    let (input_params, input_values) = build_input_format_arguments(param_ident, param_names, &params_to_skip);
     fmt.push_str(&input_params);
     fmt.push_str("):");
 
@@ -528,7 +524,7 @@ fn gen_ingress_log(
     #[cfg(feature = "structured-logging")]
     {
         let structured_values_tokens =
-            build_structured_logger_arguments(param_names, &params_to_skip, None);
+            build_structured_logger_arguments(param_ident, param_names, &params_to_skip, None);
         quote!(
             ::log::#level! (#structured_values_tokens #fmt, #fn_name, #input_values);
         )
@@ -557,7 +553,7 @@ fn gen_egress_log(
         .cloned()
         .unwrap_or(param_names.iter().map(|ident| ident.to_string()).collect());
     let mut fmt = String::from("{}("); // `fn_name`
-    let (input_params, input_values) = build_cloned_input_format_arguments(param_names, &params_to_skip);
+    let (input_params, input_values) = build_input_format_arguments(cloned_param_ident, param_names, &params_to_skip);
     fmt.push_str(&input_params);
     fmt.push_str(") => ");
     fmt.push_str(return_value_prefix);
@@ -575,16 +571,15 @@ fn gen_egress_log(
         let ret_fmt = format!(
             "{}{}{}",
             return_value_prefix, FORMAT_PLACEHOLDER, return_value_suffix
-        ); // serialize the return value -- as of 2024-03-01, both `log` & `structured-logger` have a bug
-           // preventing serialization of a `Result` type. This line, together with using "__serialized_ret"
-           // works around this
-        let structured_values_tokens = build_cloned_structured_logger_arguments(
+        );
+        let structured_values_tokens = build_structured_logger_arguments(
+            cloned_param_ident,
             param_names,
             &params_to_skip,
             Some(&Ident::new("__serialized_ret", Span::call_site())),
         );
         quote!(
-            let __serialized_ret = format!(#ret_fmt, &#return_value_ident);                                         // part of the workaround described above
+            let __serialized_ret = format!(#ret_fmt, &#return_value_ident);
             ::log::#level! (#structured_values_tokens #fmt, #fn_name, #input_values /*notice the missing comma*/ &#return_value_ident)
         )
     }
@@ -592,8 +587,10 @@ fn gen_egress_log(
 
 /// Builds the arguments to be used in `format!()`.
 /// Returns: (format_placeholders, format_values)
+/// `param_ident_builder()` is applied to every member of `param_idents` -- useful in case we are logging the "cloned" versions.\
 /// Caveat: `format_values` is a `TokenStream` with an extra comma, for coding simplicity -- meaning no comma should be placed after it, when using it in `quote!()`
 fn build_input_format_arguments(
+    param_ident_builder: impl Fn(&str) -> Ident,
     param_idents: &[Ident],
     to_skip: &[String],
 ) -> (
@@ -619,45 +616,7 @@ fn build_input_format_arguments(
     let format_values: Punctuated<Ident, Comma> = param_idents
         .iter()
         .filter(|param_ident| !to_skip.contains(&param_ident.to_string()))
-        .cloned()
-        .collect();
-    let mut format_values = format_values.to_token_stream();
-    if !format_values.is_empty() {
-        format_values.extend(Punct::new(',', Spacing::Alone).to_token_stream());
-    }
-    (format_placeholders, format_values.to_token_stream())
-}
-
-/// Builds the arguments to be used in `format!()`.
-/// Returns: (format_placeholders, format_values)
-/// Caveat: `format_values` is a `TokenStream` with an extra comma, for coding simplicity -- meaning no comma should be placed after it, when using it in `quote!()`
-fn build_cloned_input_format_arguments(
-    param_idents: &[Ident],
-    to_skip: &[String],
-) -> (
-    /*format_placeholders: */ String,
-    /*format_values: */ TokenStream,
-) {
-    let format_placeholders = param_idents
-        .iter()
-        .enumerate()
-        .map(|(param_index, param_ident)| {
-            let param_name = param_ident.to_string();
-            let placeholder = if to_skip.contains(&param_name) {
-                "<skipped>"
-            } else {
-                // the format placeholder to serialize the param
-                FORMAT_PLACEHOLDER
-            };
-            let placeholder_separator = if param_index > 0 { ", " } else { "" };
-            let format_placeholder = format!("{placeholder_separator}{param_name}: {placeholder}");
-            format_placeholder
-        })
-        .collect();
-    let format_values: Punctuated<Ident, Comma> = param_idents
-        .iter()
-        .filter(|param_ident| !to_skip.contains(&param_ident.to_string()))
-        .map(|param_ident| cloned_param_ident(&param_ident.to_string()))
+        .map(|param_ident| param_ident_builder(&param_ident.to_string()))
         .collect();
     let mut format_values = format_values.to_token_stream();
     if !format_values.is_empty() {
@@ -684,10 +643,12 @@ fn build_wanted_params_list(
 /// Builds a token stream in the form
 ///   a:?=a, b:?=b, ..., ret:?=return_val,
 /// suitable for use in the log! macros, as enabled
-/// by the `structured-logger` crate.
+/// by the `structured-logger` crate.\
+/// `param_ident_builder()` is applied to every member of `param_idents` -- useful in case we are logging the "cloned" versions.\
 /// NOTE: the alternative name:%=val form will be used if the `format-display` feature is enabled
 /// CAVEAT: notice the trailing ';'
 fn build_structured_logger_arguments(
+    param_ident_builder: impl Fn(&str) -> Ident,
     param_idents: &[Ident],
     to_skip: &[String],
     return_param_ident: Option<&Ident>,
@@ -696,41 +657,7 @@ fn build_structured_logger_arguments(
         .iter()
         .map(|param_ident| (param_ident, param_ident.to_string()))
         .filter(|(_param_ident, param_name)| !to_skip.contains(param_name))
-        .map(|(param_ident, param_name)| if FEATURE_FORMAT_DISPLAY {
-            quote!(#param_name:%=#param_ident, )
-        } else {
-            quote!(#param_name:?=#param_ident, )
-        })
-        .collect();
-    if let Some(return_param_ident) = return_param_ident {
-        tokens.extend(quote!("ret"=&#return_param_ident, ));    // notice the function's return value `return_param_ident` comes in serialized already
-    }
-
-    // replace the trailing ',' for ';', as required by `structured-logger`.
-    // NOTE: not optimal code ahead (as the whole stream will be loaded into RAM),
-    // but the stream will be small anyway, so it will be like this for now
-
-    let mut tokens_vec: Vec<TokenTree> = tokens.into_iter().collect();
-
-    if let Some(TokenTree::Punct(punct)) = tokens_vec.last() {
-        if punct.as_char() == ',' {
-            tokens_vec.pop();
-            tokens_vec.push(TokenTree::Punct(Punct::new(';', Spacing::Alone)));
-        }
-    }
-    tokens_vec.into_iter().collect()
-}
-
-fn build_cloned_structured_logger_arguments(
-    param_idents: &[Ident],
-    to_skip: &[String],
-    return_param_ident: Option<&Ident>,
-) -> TokenStream {
-    let mut tokens: TokenStream = param_idents
-        .iter()
-        .map(|param_ident| (param_ident, param_ident.to_string()))
-        .filter(|(_param_ident, param_name)| !to_skip.contains(param_name))
-        .map(|(param_ident, param_name)| (cloned_param_ident(&param_name), param_name))
+        .map(|(param_ident, param_name)| (param_ident_builder(&param_name), param_name))
         .map(|(param_ident, param_name)| if FEATURE_FORMAT_DISPLAY {
             quote!(#param_name:%=#param_ident, )
         } else {
