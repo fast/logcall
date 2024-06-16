@@ -1,7 +1,0 @@
-error: missing arguments
- --> tests/ui/err/has-no-argument.rs:1:1
-  |
-1 | #[logcall::logcall]
-  | ^^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `logcall::logcall` (in Nightly builds, run with -Z macro-backtrace for more info)
