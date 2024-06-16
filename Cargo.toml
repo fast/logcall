@@ -1,11 +1,11 @@
 [package]
 name = "logcall"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 authors = ["andylokandy <andylokandy@hotmail.com>"]
 description = "An attribute macro that logs the function return value."
-repository = "https://github.com/andylokandy/logfn"
-documentation = "https://docs.rs/logfn"
+repository = "https://github.com/andylokandy/logcall"
+documentation = "https://docs.rs/logcall"
 categories = ["development-tools::debugging"]
 readme = "README.md"
 keywords = ["log", "macro", "derive", "logging", "function"]
@@ -18,7 +18,6 @@ proc-macro = true
 proc-macro-error = "1"
 proc-macro2 = "1"
 quote = "1"
-# The macro `quote_spanned!` is added to syn in 1.0.84
 syn = { version = "1.0.84", features = [
   "full",
   "parsing",

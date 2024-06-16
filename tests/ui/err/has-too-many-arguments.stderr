@@ -1,7 +1,5 @@
-error: invalid arguments
- --> tests/ui/err/has-too-many-arguments.rs:1:1
+error: level has already been specified
+ --> tests/ui/err/has-too-many-arguments.rs:1:28
   |
 1 | #[logcall::logcall("info", "error")]
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `logcall::logcall` (in Nightly builds, run with -Z macro-backtrace for more info)
+  |                            ^^^^^^^

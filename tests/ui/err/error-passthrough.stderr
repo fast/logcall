@@ -1,0 +1,10 @@
+error[E0428]: the name `f` is defined multiple times
+ --> tests/ui/err/error-passthrough.rs:5:1
+  |
+2 | fn f() {}
+  | -- previous definition of the value `f` here
+...
+5 | fn f() {}
+  | ^^ `f` redefined here
+  |
+  = note: `f` must be defined only once in the value namespace of this module

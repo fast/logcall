@@ -1,7 +1,5 @@
-// Copyright 2020 TiKV Project Authors. Licensed under Apache-2.0.
-
 #![doc = include_str!("../README.md")]
-#![recursion_limit = "256"]
+
 // Instrumenting the async fn is not as straight forward as expected because `async_trait` rewrites `async fn`
 // into a normal fn which returns `Box<impl Future>`, and this stops the macro from distinguishing `async fn` from `fn`.
 // The following code reused the `async_trait` probes from [tokio-tracing](https://github.com/tokio-rs/tracing/blob/6a61897a5e834988ad9ac709e28c93c4dbf29116/tracing-attributes/src/expand.rs).
@@ -12,7 +10,6 @@ extern crate proc_macro;
 extern crate proc_macro_error;
 
 use proc_macro2::Span;
-use quote::quote_spanned;
 use syn::spanned::Spanned;
 use syn::Ident;
 use syn::*;
@@ -20,61 +17,77 @@ use syn::*;
 enum Args {
     Simple {
         level: String,
+        input_format: Option<String>,
     },
     Result {
         ok_level: Option<String>,
         err_level: Option<String>,
+        input_format: Option<String>,
     },
 }
 
 impl Args {
     fn parse(input: AttributeArgs) -> Args {
-        match input.as_slice() {
-            [NestedMeta::Lit(Lit::Str(s))] => Args::Simple { level: s.value() },
-            [NestedMeta::Meta(Meta::NameValue(MetaNameValue {
-                path,
-                lit: Lit::Str(s),
-                ..
-            }))] if path.is_ident("ok") => Args::Result {
-                ok_level: Some(s.value()),
-                err_level: None,
-            },
-            [NestedMeta::Meta(Meta::NameValue(MetaNameValue {
-                path,
-                lit: Lit::Str(s),
-                ..
-            }))] if path.is_ident("err") => Args::Result {
-                ok_level: None,
-                err_level: Some(s.value()),
-            },
-            [NestedMeta::Meta(Meta::NameValue(MetaNameValue {
-                path,
-                lit: Lit::Str(s),
-                ..
-            })), NestedMeta::Meta(Meta::NameValue(MetaNameValue {
-                path: path2,
-                lit: Lit::Str(s2),
-                ..
-            }))]
-            | [NestedMeta::Meta(Meta::NameValue(MetaNameValue {
-                path: path2,
-                lit: Lit::Str(s2),
-                ..
-            })), NestedMeta::Meta(Meta::NameValue(MetaNameValue {
-                path,
-                lit: Lit::Str(s),
-                ..
-            }))] if path.is_ident("ok") && path2.is_ident("err") => Args::Result {
-                ok_level: Some(s.value()),
-                err_level: Some(s2.value()),
-            },
-            [] => abort_call_site!("missing arguments"),
-            _ => abort_call_site!("invalid arguments"),
+        let mut simple_level = None;
+        let mut ok_level = None;
+        let mut err_level = None;
+        let mut input_format = None;
+
+        for arg in input {
+            match arg {
+                NestedMeta::Meta(Meta::NameValue(MetaNameValue {
+                    path,
+                    lit: Lit::Str(lit_str),
+                    ..
+                })) => {
+                    let ident = path.get_ident().unwrap().to_string();
+                    match ident.as_str() {
+                        "ok" => {
+                            ok_level = Some(lit_str.value());
+                        }
+                        "err" => {
+                            err_level = Some(lit_str.value());
+                        }
+                        "input" => {
+                            input_format = Some(lit_str.value());
+                        }
+                        _ => {
+                            abort!(ident.span(), "unexpected argument");
+                        }
+                    }
+                }
+                NestedMeta::Lit(Lit::Str(lit_str)) => {
+                    if simple_level.is_some() {
+                        abort!(lit_str.span(), "level has already been specified");
+                    }
+                    simple_level = Some(lit_str.value());
+                }
+                _ => {
+                    abort!(arg.span(), "unexpected argument");
+                }
+            }
+        }
+
+        if ok_level.is_some() || err_level.is_some() {
+            if simple_level.is_some() {
+                abort_call_site!("plain level cannot be specified with `ok` or `err` levels");
+            }
+
+            Args::Result {
+                ok_level,
+                err_level,
+                input_format,
+            }
+        } else {
+            Args::Simple {
+                level: simple_level.unwrap_or_else(|| "debug".to_string()),
+                input_format,
+            }
         }
     }
 }
 
-/// An attribute macro that logs the function return value.
+/// `logcall` attribute macro that logs the function inputs and return values.
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn logcall(
@@ -92,7 +105,7 @@ pub fn logcall(
         // let's rewrite some statements!
         match internal_fun.kind {
             // async-trait <= 0.1.43
-            AsyncTraitKind::Function(_) => {
+            AsyncTraitKind::Function => {
                 unimplemented!(
                     "Please upgrade the crate `async-trait` to a version higher than 0.1.44"
                 )
@@ -101,15 +114,10 @@ pub fn logcall(
             AsyncTraitKind::Async(async_expr) => {
                 // fallback if we couldn't find the '__async_trait' binding, might be
                 // useful for crates exhibiting the same behaviors as async-trait
-                let instrumented_block = gen_block(
-                    &async_expr.block,
-                    true,
-                    false,
-                    &input.sig.ident.to_string(),
-                    args,
-                );
+                let instrumented_block =
+                    gen_block(&async_expr.block, true, false, &input.sig, args);
                 let async_attrs = &async_expr.attrs;
-                quote! {
+                quote::quote_spanned! {async_expr.span()=>
                     Box::pin(#(#async_attrs) * #instrumented_block )
                 }
             }
@@ -119,14 +127,14 @@ pub fn logcall(
             &input.block,
             input.sig.asyncness.is_some(),
             input.sig.asyncness.is_some(),
-            &input.sig.ident.to_string(),
+            &input.sig,
             args,
         )
     };
 
     let ItemFn {
         attrs, vis, sig, ..
-    } = input;
+    } = input.clone();
 
     let Signature {
         output: return_type,
@@ -145,7 +153,7 @@ pub fn logcall(
         ..
     } = sig;
 
-    quote::quote!(
+    quote::quote_spanned!(input.span()=>
         #(#attrs) *
         #vis #constness #unsafety #asyncness #abi fn #ident<#gen_params>(#params) #return_type
         #where_clause
@@ -161,17 +169,26 @@ fn gen_block(
     block: &Block,
     async_context: bool,
     async_keyword: bool,
-    fn_name: &str,
+    sig: &Signature,
     args: Args,
 ) -> proc_macro2::TokenStream {
+    let fn_name = sig.ident.to_string();
+
     match args {
-        Args::Simple { level } => {
+        Args::Simple {
+            level,
+            input_format,
+        } => {
             // Generate the instrumented function body.
             // If the function is an `async fn`, this will wrap it in an async block.
             if async_context {
-                let log = gen_log(&level, fn_name, "__ret_value");
-                let block = quote_spanned!(block.span()=>
+                let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
+                let log = gen_log(&level, &fn_name, "__input_string", "__ret_value");
+                let block = quote::quote_spanned!(block.span()=>
                     async move {
+                        #[allow(unknown_lints)]
+                        #[allow(clippy::useless_format)]
+                        let __input_string = format!(#input_format);
                         let __ret_value = async move { #block }.await;
                         #log;
                         __ret_value
@@ -179,15 +196,19 @@ fn gen_block(
                 );
 
                 if async_keyword {
-                    quote_spanned!(block.span()=>
+                    quote::quote_spanned!(block.span()=>
                         #block.await
                     )
                 } else {
                     block
                 }
             } else {
-                let log = gen_log(&level, fn_name, "__ret_value");
-                quote_spanned!(block.span()=>
+                let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
+                let log = gen_log(&level, &fn_name, "__input_string", "__ret_value");
+                quote::quote_spanned!(block.span()=>
+                    #[allow(unknown_lints)]
+                    #[allow(clippy::useless_format)]
+                    let __input_string = format!(#input_format);
                     #[allow(unknown_lints)]
                     #[allow(clippy::redundant_closure_call)]
                     let __ret_value = (move || #block)();
@@ -199,30 +220,31 @@ fn gen_block(
         Args::Result {
             ok_level,
             err_level,
+            input_format,
         } => {
             let ok_arm = if let Some(ok_level) = ok_level {
-                let log_ok = gen_log(&ok_level, fn_name, "__ret_value");
-                quote_spanned!(block.span()=>
+                let log_ok = gen_log(&ok_level, &fn_name, "__input_string", "__ret_value");
+                quote::quote_spanned!(block.span()=>
                     __ret_value@Ok(_) => {
                         #log_ok;
                         __ret_value
                     }
                 )
             } else {
-                quote_spanned!(block.span()=>
+                quote::quote_spanned!(block.span()=>
                     Ok(__ret_value) => Ok(__ret_value),
                 )
             };
             let err_arm = if let Some(err_level) = err_level {
-                let log_err = gen_log(&err_level, fn_name, "__ret_value");
-                quote_spanned!(block.span()=>
+                let log_err = gen_log(&err_level, &fn_name, "__input_string", "__ret_value");
+                quote::quote_spanned!(block.span()=>
                     __ret_value@Err(_) => {
                         #log_err;
                         __ret_value
                     }
                 )
             } else {
-                quote_spanned!(block.span()=>
+                quote::quote_spanned!(block.span()=>
                     Err(__ret_value) => Err(__ret_value),
                 )
             };
@@ -230,8 +252,12 @@ fn gen_block(
             // Generate the instrumented function body.
             // If the function is an `async fn`, this will wrap it in an async block.
             if async_context {
-                let block = quote_spanned!(block.span()=>
-                    async move {
+                let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
+                let block = quote::quote_spanned!(block.span()=>
+                        async move {
+                        #[allow(unknown_lints)]
+                        #[allow(clippy::useless_format)]
+                        let __input_string = format!(#input_format);
                         let __ret_value = async move { #block }.await;
                         match __ret_value {
                             #ok_arm
@@ -241,14 +267,18 @@ fn gen_block(
                 );
 
                 if async_keyword {
-                    quote_spanned!(block.span()=>
+                    quote::quote_spanned!(block.span()=>
                         #block.await
                     )
                 } else {
                     block
                 }
             } else {
-                quote_spanned!(block.span()=>
+                let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
+                quote::quote_spanned!(block.span()=>
+                    #[allow(unknown_lints)]
+                    #[allow(clippy::useless_format)]
+                    let __input_string = format!(#input_format);
                     #[allow(unknown_lints)]
                     #[allow(clippy::redundant_closure_call)]
                     let __ret_value = (move || #block)();
@@ -262,21 +292,49 @@ fn gen_block(
     }
 }
 
-fn gen_log(level: &str, fn_name: &str, return_value: &str) -> proc_macro2::TokenStream {
+fn gen_log(
+    level: &str,
+    fn_name: &str,
+    input_string: &str,
+    return_value: &str,
+) -> proc_macro2::TokenStream {
     let level = level.to_lowercase();
     if !["error", "warn", "info", "debug", "trace"].contains(&level.as_str()) {
         abort_call_site!("unknown log level");
     }
     let level: Ident = Ident::new(&level, Span::call_site());
+    let input_string: Ident = Ident::new(input_string, Span::call_site());
     let return_value: Ident = Ident::new(return_value, Span::call_site());
-    quote!(
-        log::#level! ("{}() => {:?}", #fn_name, &#return_value)
+    quote::quote!(
+        log::#level! ("{}({}) => {:?}", #fn_name, #input_string, &#return_value)
     )
+}
+
+// fn(a: usize, b: usize) => "a = {a:?}, b = {b:?}"
+fn gen_input_format(sig: &Signature) -> String {
+    let mut input_format = String::new();
+    for (i, input) in sig.inputs.iter().enumerate() {
+        if i > 0 {
+            input_format.push_str(", ");
+        }
+        match input {
+            FnArg::Typed(PatType { pat, .. }) => {
+                if let Pat::Ident(pat_ident) = &**pat {
+                    let ident = &pat_ident.ident;
+                    input_format.push_str(&format!("{ident} = {{{ident}:?}}"));
+                }
+            }
+            FnArg::Receiver(_) => {
+                input_format.push_str("self");
+            }
+        }
+    }
+    input_format
 }
 
 enum AsyncTraitKind<'a> {
     // old construction. Contains the function
-    Function(&'a ItemFn),
+    Function,
     // new construction. Contains a reference to the async block
     Async(&'a ExprAsync),
 }
@@ -380,13 +438,13 @@ fn get_async_trait_info(block: &Block, block_is_async: bool) -> Option<AsyncTrai
 
     // Was that function defined inside of the current block?
     // If so, retrieve the statement where it was declared and the function itself
-    let (stmt_func_declaration, func) = inside_funs
+    let (stmt_func_declaration, _) = inside_funs
         .into_iter()
         .find(|(_, fun)| fun.sig.ident == func_name)?;
 
     Some(AsyncTraitInfo {
         _source_stmt: stmt_func_declaration,
-        kind: AsyncTraitKind::Function(func),
+        kind: AsyncTraitKind::Function,
     })
 }
 
