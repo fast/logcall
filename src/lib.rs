@@ -186,6 +186,7 @@ fn gen_block(
                 let log = gen_log(&level, &fn_name, "__input_string", "__ret_value");
                 let block = quote::quote_spanned!(block.span()=>
                     async move {
+                        #[allow(unused_braces)]
                         #[allow(unknown_lints)]
                         #[allow(clippy::useless_format)]
                         let __input_string = format!(#input_format);
@@ -206,6 +207,7 @@ fn gen_block(
                 let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
                 let log = gen_log(&level, &fn_name, "__input_string", "__ret_value");
                 quote::quote_spanned!(block.span()=>
+                    #[allow(unused_braces)]
                     #[allow(unknown_lints)]
                     #[allow(clippy::useless_format)]
                     let __input_string = format!(#input_format);
@@ -258,6 +260,7 @@ fn gen_block(
                         #[allow(unknown_lints)]
                         #[allow(clippy::useless_format)]
                         let __input_string = format!(#input_format);
+                        #[allow(unused_braces)]
                         let __ret_value = async move { #block }.await;
                         match __ret_value {
                             #ok_arm
@@ -279,6 +282,7 @@ fn gen_block(
                     #[allow(unknown_lints)]
                     #[allow(clippy::useless_format)]
                     let __input_string = format!(#input_format);
+                    #[allow(unused_braces)]
                     #[allow(unknown_lints)]
                     #[allow(clippy::redundant_closure_call)]
                     let __ret_value = (move || #block)();
