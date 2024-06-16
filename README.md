@@ -1,5 +1,11 @@
 # logcall
 
+[![Crates.io](https://img.shields.io/crates/v/logcall?style=flat-square&logo=rust)](https://crates.io/crates/logcall)
+[![Crates.io](https://img.shields.io/crates/d/logcall?style=flat-square&logo=rust)](https://crates.io/crates/logcall)
+[![Documentation](https://img.shields.io/docsrs/logcall?style=flat-square&logo=rust)](https://docs.rs/logcall/)
+[![CI Status](https://img.shields.io/github/actions/workflow/status/andylokandy/logcall/ci.yml?style=flat-square&logo=github)](https://github.com/andylokandy/logcall/actions)
+[![Crates.io](https://img.shields.io/crates/l/logcall?style=flat-square&logo=)](https://crates.io/crates/logcall)
+
 `logcall` is a Rust procedural macro crate designed to automatically log function calls, their inputs, and their outputs. This macro facilitates debugging and monitoring by providing detailed logs of function executions with minimal boilerplate code.
 
 This is a re-implementation of the [`log-derive`](https://crates.io/crates/log-derive) crate with [`async-trait`](https://crates.io/crates/async-trait) compatibility.
@@ -75,7 +81,7 @@ fn main() {
 
 When the `main` function runs, it initializes the logger and logs each function call as specified:
 
-```ignore
+```rust,ignore
 [2024-06-16T12:41:04Z DEBUG main] add(a = 2, b = 3) => 5
 [2024-06-16T12:41:04Z INFO  main] multiply(a = 2, b = 3) => 6
 [2024-06-16T12:41:04Z ERROR main] divide(a = 2, b = 0) => Err("Division by zero")
