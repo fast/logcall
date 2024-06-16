@@ -11,11 +11,13 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v3
+    - name: Install Rust nightly
+      run: rustup toolchain install nightly
+    - name: Use Rust nightly
+      run: rustup default nightly
     - name: Build
       run: cargo build --verbose
     - name: Run tests
