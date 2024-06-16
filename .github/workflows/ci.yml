@@ -14,9 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - name: Install Rust stable
+    - name: Install Stable Rust
       run: rustup toolchain install stable
-    - name: Use Rust stable
+    - name: Use Stable Rust
       run: rustup default stable
     - name: Build
       run: cargo build --verbose
