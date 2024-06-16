@@ -75,7 +75,7 @@ fn main() {
 
 When the `main` function runs, it initializes the logger and logs each function call as specified:
 
-```
+```ignore
 [2024-06-16T12:41:04Z DEBUG main] add(a = 2, b = 3) => 5
 [2024-06-16T12:41:04Z INFO  main] multiply(a = 2, b = 3) => 6
 [2024-06-16T12:41:04Z ERROR main] divide(a = 2, b = 0) => Err("Division by zero")
@@ -86,19 +86,19 @@ When the `main` function runs, it initializes the logger and logs each function 
 ## Customization
 
 - **Default Log Level**: If no log level is specified, `logcall` logs at the `debug` level:
-  ```rust
+  ```rust,ignore
   #[logcall]
   ```
 - **Specify Log Level**: Use the macro parameters to specify log level:
-  ```rust
+  ```rust,ignore
   #[logcall("info")]
 - **Specify Log Levels for `Result`**: Use the `ok` and `err` parameters to specify log levels for `Ok` and `Err` variants:
-  ```rust
+  ```rust,ignore
   #[logcall(err = "error")]
   #[logcall(ok = "info", err = "error")]
   ```
 - **Customize Input Logging**: Use the `input` parameter to customize the input log format:
-  ```rust
+  ```rust,ignore
   #[logcall(input = "a = {a:?}, ..")]
   #[logcall("info", input = "a = {a:?}, ..")]
   #[logcall(ok = "info", err = "error", input = "a = {a:?}, ..")]
