@@ -172,8 +172,6 @@ fn gen_block(
     sig: &Signature,
     args: Args,
 ) -> proc_macro2::TokenStream {
-    let fn_name = sig.ident.to_string();
-
     match args {
         Args::Simple {
             level,
@@ -183,31 +181,29 @@ fn gen_block(
             // If the function is an `async fn`, this will wrap it in an async block.
             if async_context {
                 let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
-                let log = gen_log(&level, &fn_name, "__input_string", "__ret_value");
+                let log = gen_log(&level, "__input_string", "__ret_value");
                 let block = quote::quote_spanned!(block.span()=>
-                    async move {
-                        #[allow(unused_braces)]
-                        #[allow(unknown_lints)]
-                        #[allow(clippy::useless_format)]
-                        let __input_string = format!(#input_format);
-                        let __ret_value = async move { #block }.await;
-                        #log;
-                        __ret_value
-                    }
+                    #[allow(unknown_lints)]
+                    #[allow(clippy::useless_format)]
+                    let __input_string = format!(#input_format);
+                    let __ret_value = #block;
+                    #log;
+                    __ret_value
                 );
 
                 if async_keyword {
-                    quote::quote_spanned!(block.span()=>
-                        #block.await
-                    )
-                } else {
                     block
+                } else {
+                    quote::quote_spanned!(block.span()=>
+                        async move {
+                            #block
+                        }
+                    )
                 }
             } else {
                 let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
-                let log = gen_log(&level, &fn_name, "__input_string", "__ret_value");
+                let log = gen_log(&level, "__input_string", "__ret_value");
                 quote::quote_spanned!(block.span()=>
-                    #[allow(unused_braces)]
                     #[allow(unknown_lints)]
                     #[allow(clippy::useless_format)]
                     let __input_string = format!(#input_format);
@@ -225,7 +221,7 @@ fn gen_block(
             input_format,
         } => {
             let ok_arm = if let Some(ok_level) = ok_level {
-                let log_ok = gen_log(&ok_level, &fn_name, "__input_string", "__ret_value");
+                let log_ok = gen_log(&ok_level, "__input_string", "__ret_value");
                 quote::quote_spanned!(block.span()=>
                     __ret_value@Ok(_) => {
                         #log_ok;
@@ -238,7 +234,7 @@ fn gen_block(
                 )
             };
             let err_arm = if let Some(err_level) = err_level {
-                let log_err = gen_log(&err_level, &fn_name, "__input_string", "__ret_value");
+                let log_err = gen_log(&err_level, "__input_string", "__ret_value");
                 quote::quote_spanned!(block.span()=>
                     __ret_value@Err(_) => {
                         #log_err;
@@ -256,25 +252,24 @@ fn gen_block(
             if async_context {
                 let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
                 let block = quote::quote_spanned!(block.span()=>
-                        async move {
-                        #[allow(unknown_lints)]
-                        #[allow(clippy::useless_format)]
-                        let __input_string = format!(#input_format);
-                        #[allow(unused_braces)]
-                        let __ret_value = async move { #block }.await;
-                        match __ret_value {
-                            #ok_arm
-                            #err_arm
-                        }
+                    #[allow(unknown_lints)]
+                    #[allow(clippy::useless_format)]
+                    let __input_string = format!(#input_format);
+                    let __ret_value = #block;
+                    match __ret_value {
+                        #ok_arm
+                        #err_arm
                     }
                 );
 
                 if async_keyword {
-                    quote::quote_spanned!(block.span()=>
-                        #block.await
-                    )
-                } else {
                     block
+                } else {
+                    quote::quote_spanned!(block.span()=>
+                        async move {
+                            #block
+                        }
+                    )
                 }
             } else {
                 let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
@@ -282,7 +277,6 @@ fn gen_block(
                     #[allow(unknown_lints)]
                     #[allow(clippy::useless_format)]
                     let __input_string = format!(#input_format);
-                    #[allow(unused_braces)]
                     #[allow(unknown_lints)]
                     #[allow(clippy::redundant_closure_call)]
                     let __ret_value = (move || #block)();
@@ -296,12 +290,7 @@ fn gen_block(
     }
 }
 
-fn gen_log(
-    level: &str,
-    fn_name: &str,
-    input_string: &str,
-    return_value: &str,
-) -> proc_macro2::TokenStream {
+fn gen_log(level: &str, input_string: &str, return_value: &str) -> proc_macro2::TokenStream {
     let level = level.to_lowercase();
     if !["error", "warn", "info", "debug", "trace"].contains(&level.as_str()) {
         abort_call_site!("unknown log level");
@@ -309,6 +298,17 @@ fn gen_log(
     let level: Ident = Ident::new(&level, Span::call_site());
     let input_string: Ident = Ident::new(input_string, Span::call_site());
     let return_value: Ident = Ident::new(return_value, Span::call_site());
+    let fn_name = quote::quote! {
+        {
+            fn f() {}
+            fn type_name_of<T>(_: T) -> &'static str {
+                std::any::type_name::<T>()
+            }
+            let name = type_name_of(f);
+            let name = &name[..name.len() - 3];
+            name.trim_end_matches("::{{closure}}")
+        }
+    };
     quote::quote!(
         log::#level! ("{}({}) => {:?}", #fn_name, #input_string, &#return_value)
     )
