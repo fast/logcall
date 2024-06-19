@@ -73,7 +73,7 @@ fn main() {
     multiply(2, 3);
     divide(2, 0).ok();
     divide2(2, 0).ok();
-    subtract(2, 3);
+    subtract(3, 2);
 }
 ```
 
@@ -82,11 +82,11 @@ fn main() {
 When the `main` function runs, it initializes the logger and logs each function call as specified:
 
 ```rust,ignore
-[2024-06-16T12:41:04Z DEBUG main] add(a = 2, b = 3) => 5
-[2024-06-16T12:41:04Z INFO  main] multiply(a = 2, b = 3) => 6
-[2024-06-16T12:41:04Z ERROR main] divide(a = 2, b = 0) => Err("Division by zero")
-[2024-06-16T12:41:04Z ERROR main] divide2(a = 2, b = 0) => Err("Division by zero")
-[2024-06-16T12:41:04Z DEBUG main] subtract(a = 2, ..) => -1
+[2024-06-19T15:01:23Z DEBUG main] main::add(a = 2, b = 3) => 5
+[2024-06-19T15:01:23Z INFO  main] main::multiply(a = 2, b = 3) => 6
+[2024-06-19T15:01:23Z ERROR main] main::divide(a = 2, b = 0) => Err("Division by zero")
+[2024-06-19T15:01:23Z ERROR main] main::divide2(a = 2, b = 0) => Err("Division by zero")
+[2024-06-19T15:01:23Z DEBUG main] main::subtract(a = 3, ..) => 1
 ```
 
 ## Customization

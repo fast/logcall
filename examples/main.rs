@@ -47,5 +47,5 @@ fn main() {
     multiply(2, 3);
     divide(2, 0).ok();
     divide2(2, 0).ok();
-    subtract(2, 3);
+    subtract(3, 2);
 }

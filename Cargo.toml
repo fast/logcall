@@ -1,6 +1,6 @@
 [package]
 name = "logcall"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 authors = ["andylokandy <andylokandy@hotmail.com>"]
 description = "An attribute macro that logs the function return value."
@@ -32,3 +32,5 @@ log = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 env_logger = "0.10.0"
 async-trait = "0.1.70"
+pollster = "0.3"
+minitrace = "0.6"
