@@ -1,5 +1,3 @@
-#![allow(unreachable_code)]
-
 #[logcall::logcall("info")]
 async fn f(a: u32) -> u32 {
     if a == 1 {
