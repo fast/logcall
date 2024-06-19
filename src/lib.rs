@@ -187,8 +187,7 @@ fn gen_block(
                     #[allow(clippy::useless_format)]
                     let __input_string = format!(#input_format);
                     #[allow(unknown_lints)]
-                    #[allow(clippy::redundant_closure_call)]
-                    let __ret_value = (move || #block)();
+                    let __ret_value = async { #block }.await;
                     #log;
                     __ret_value
                 );
@@ -211,6 +210,7 @@ fn gen_block(
                     let __input_string = format!(#input_format);
                     #[allow(unknown_lints)]
                     #[allow(clippy::redundant_closure_call)]
+                    #[allow(clippy::let_unit_value)]
                     let __ret_value = (move || #block)();
                     #log;
                     __ret_value
@@ -258,8 +258,7 @@ fn gen_block(
                     #[allow(clippy::useless_format)]
                     let __input_string = format!(#input_format);
                     #[allow(unknown_lints)]
-                    #[allow(clippy::redundant_closure_call)]
-                    let __ret_value = (move || #block)();
+                    let __ret_value = async { #block }.await;
                     match __ret_value {
                         #ok_arm
                         #err_arm
@@ -283,6 +282,7 @@ fn gen_block(
                     let __input_string = format!(#input_format);
                     #[allow(unknown_lints)]
                     #[allow(clippy::redundant_closure_call)]
+                    #[allow(clippy::let_unit_value)]
                     let __ret_value = (move || #block)();
                     match __ret_value {
                         #ok_arm

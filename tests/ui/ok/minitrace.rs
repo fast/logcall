@@ -4,7 +4,9 @@ fn f() {}
 
 #[logcall::logcall]
 #[minitrace::trace]
-async fn g() {}
+async fn g() {
+    std::future::ready(1).await;
+}
 
 fn main() {
     f();
