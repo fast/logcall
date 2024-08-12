@@ -1,10 +1,10 @@
 [package]
 name = "logcall"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
-authors = ["andylokandy <andylokandy@hotmail.com>"]
+authors = ["FastLabs Developers"]
 description = "An attribute macro that logs the function return value."
-repository = "https://github.com/andylokandy/logcall"
+repository = "https://github.com/fast/logcall"
 documentation = "https://docs.rs/logcall"
 categories = ["development-tools::debugging"]
 readme = "README.md"
