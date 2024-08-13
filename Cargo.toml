@@ -2,7 +2,6 @@
 name = "logcall"
 version = "0.1.10"
 edition = "2021"
-authors = ["FastLabs Developers"]
 description = "An attribute macro that logs the function return value."
 repository = "https://github.com/fast/logcall"
 documentation = "https://docs.rs/logcall"
