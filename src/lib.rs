@@ -4,11 +4,9 @@
 // into a normal fn which returns `Box<impl Future>`, and this stops the macro from distinguishing `async fn` from `fn`.
 // The following code reused the `async_trait` probes from [tokio-tracing](https://github.com/tokio-rs/tracing/blob/6a61897a5e834988ad9ac709e28c93c4dbf29116/tracing-attributes/src/expand.rs).
 
-extern crate proc_macro;
-#[macro_use]
-extern crate proc_macro_error;
-
 use proc_macro2::Span;
+use proc_macro_error2::abort_call_site;
+use proc_macro_error2::proc_macro_error;
 use syn::parse::Parse;
 use syn::parse::ParseStream;
 use syn::spanned::Spanned;
