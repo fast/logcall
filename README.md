@@ -1,4 +1,4 @@
-# logcall
+# Logcall
 
 [![Crates.io](https://img.shields.io/crates/v/logcall?style=flat-square&logo=rust)](https://crates.io/crates/logcall)
 [![Downloads](https://img.shields.io/crates/d/logcall?style=flat-square&logo=rust)](https://crates.io/crates/logcall)
@@ -6,7 +6,7 @@
 [![CI Status](https://img.shields.io/github/actions/workflow/status/fast/logcall/ci.yml?style=flat-square&logo=github)](https://github.com/fast/logcall/actions)
 [![License](https://img.shields.io/crates/l/logcall?style=flat-square&logo=)](https://crates.io/crates/logcall)
 
-`logcall` is a Rust procedural macro crate designed to automatically log function calls, their inputs, and their outputs. This macro facilitates debugging and monitoring by providing detailed logs of function executions with minimal boilerplate code.
+Logcall is a Rust procedural macro crate designed to automatically log function calls, their inputs, and their outputs. This macro facilitates debugging and monitoring by providing detailed logs of function executions with minimal boilerplate code.
 
 This is a re-implementation of the [`log-derive`](https://crates.io/crates/log-derive) crate with [`async-trait`](https://crates.io/crates/async-trait) compatibility.
 
@@ -115,10 +115,16 @@ When the `main` function runs, it initializes the logger and logs each function 
   #[logcall(ok = "info", err = "error", input = "a = {a:?}, ..")]
   ```
 
+## Minimum Supported Rust Version (MSRV)
+
+This crate is built against the latest stable release, and its minimum supported rustc version is 1.80.0.
+
+The policy is that the minimum Rust version required to use this crate can be increased in minor version updates. For example, if Logcall 1.0 requires Rust 1.20.0, then Logcall 1.0.z for all values of z will also require Rust 1.20.0 or newer. However, Logcall 1.y for y > 0 may require a newer minimum version of Rust.
+
 ## Contributing
 
 Contributions are welcome! Please submit pull requests or open issues to improve the crate.
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

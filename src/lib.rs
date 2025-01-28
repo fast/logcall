@@ -1,8 +1,12 @@
 #![doc = include_str!("../README.md")]
 
-// Instrumenting the async fn is not as straight forward as expected because `async_trait` rewrites `async fn`
-// into a normal fn which returns `Box<impl Future>`, and this stops the macro from distinguishing `async fn` from `fn`.
-// The following code reused the `async_trait` probes from [tokio-tracing](https://github.com/tokio-rs/tracing/blob/6a61897a5e834988ad9ac709e28c93c4dbf29116/tracing-attributes/src/expand.rs).
+// Instrumenting the async fn is not as straight forward as expected because `async_trait`
+// rewrites `async fn` into a normal fn which returns `Box<impl Future>`, and this stops
+// the macro from distinguishing `async fn` from `fn`.
+//
+// The following code reused the `async_trait` probes from tokio-tracing [1].
+//
+// [1] https://github.com/tokio-rs/tracing/blob/6a61897a/tracing-attributes/src/expand.rs
 
 use proc_macro2::Span;
 use proc_macro_error2::abort_call_site;
