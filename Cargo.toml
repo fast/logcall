@@ -14,7 +14,7 @@ license = "MIT"
 proc-macro = true
 
 [dependencies]
-proc-macro-error = { version = "1" }
+proc-macro-error2 = { version = "2" }
 proc-macro2 = { version = "1" }
 quote = { version = "1" }
 syn = { version = "2", features = [
