@@ -1,0 +1,79 @@
+error: plain level cannot be specified with `ok` or `err` levels
+ --> tests/ui/err/multiple-args.rs:1:1
+  |
+1 | #[logcall::logcall("info", ok = "info")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `logcall::logcall` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: plain level cannot be specified with `ok` or `err` levels
+ --> tests/ui/err/multiple-args.rs:4:1
+  |
+4 | #[logcall::logcall("info", err = "info")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `logcall::logcall` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: plain level cannot be specified with `ok` or `err` levels
+ --> tests/ui/err/multiple-args.rs:7:1
+  |
+7 | #[logcall::logcall("info", ok = "info", err = "info")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `logcall::logcall` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: plain level cannot be specified with `some` or `none` levels
+  --> tests/ui/err/multiple-args.rs:10:1
+   |
+10 | #[logcall::logcall("info", some = "info")]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the attribute macro `logcall::logcall` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: plain level cannot be specified with `some` or `none` levels
+  --> tests/ui/err/multiple-args.rs:13:1
+   |
+13 | #[logcall::logcall("info", none = "info")]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the attribute macro `logcall::logcall` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: plain level cannot be specified with `some` or `none` levels
+  --> tests/ui/err/multiple-args.rs:16:1
+   |
+16 | #[logcall::logcall("info", some = "info", none = "info")]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the attribute macro `logcall::logcall` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: `some` and `none` levels cannot be specified with `ok` or `err` levels
+  --> tests/ui/err/multiple-args.rs:19:1
+   |
+19 | #[logcall::logcall(some = "info", ok = "info")]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the attribute macro `logcall::logcall` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: `some` and `none` levels cannot be specified with `ok` or `err` levels
+  --> tests/ui/err/multiple-args.rs:22:1
+   |
+22 | #[logcall::logcall(ok = "info", some = "info")]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the attribute macro `logcall::logcall` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: `some` and `none` levels cannot be specified with `ok` or `err` levels
+  --> tests/ui/err/multiple-args.rs:25:1
+   |
+25 | #[logcall::logcall(some = "info", none = "info", ok = "info", err = "info")]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the attribute macro `logcall::logcall` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: plain level cannot be specified with `ok` or `err` levels
+  --> tests/ui/err/multiple-args.rs:28:1
+   |
+28 | #[logcall::logcall("info", some = "info", none = "info", ok = "info", err = "info")]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the attribute macro `logcall::logcall` (in Nightly builds, run with -Z macro-backtrace for more info)

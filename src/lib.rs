@@ -42,6 +42,11 @@ enum Args {
         err_level: Option<String>,
         input_format: Option<String>,
     },
+    Option {
+        some_level: Option<String>,
+        none_level: Option<String>,
+        input_format: Option<String>,
+    },
 }
 
 impl Parse for Args {
@@ -51,6 +56,8 @@ impl Parse for Args {
             simple_level: Option<String>,
             ok_level: Option<String>,
             err_level: Option<String>,
+            some_level: Option<String>,
+            none_level: Option<String>,
             input_format: Option<String>,
         }
 
@@ -76,6 +83,24 @@ impl Parse for Args {
                         input.parse::<Token![=]>()?;
                         let level = input.parse::<LitStr>()?;
                         match ident.to_string().as_str() {
+                            "some" => {
+                                if ctx.some_level.is_some() {
+                                    return Err(syn::Error::new(
+                                        level.span(),
+                                        "some_level specified multiple times",
+                                    ));
+                                }
+                                ctx.some_level = Some(level.value());
+                            }
+                            "none" => {
+                                if ctx.none_level.is_some() {
+                                    return Err(syn::Error::new(
+                                        level.span(),
+                                        "none_level specified multiple times",
+                                    ));
+                                }
+                                ctx.none_level = Some(level.value());
+                            }
                             "ok" => {
                                 if ctx.ok_level.is_some() {
                                     return Err(syn::Error::new(
@@ -126,20 +151,37 @@ impl Parse for Args {
             simple_level,
             ok_level,
             err_level,
+            some_level,
+            none_level,
             input_format,
         } = input.parse::<ArgContext>()?;
+
         if ok_level.is_some() || err_level.is_some() {
             if simple_level.is_some() {
                 abort_call_site!("plain level cannot be specified with `ok` or `err` levels");
+            }
+            if some_level.is_some() || none_level.is_some() {
+                abort_call_site!(
+                    "`some` and `none` levels cannot be specified with `ok` or `err` levels"
+                );
             }
             Ok(Args::Result {
                 ok_level,
                 err_level,
                 input_format,
             })
+        } else if some_level.is_some() || none_level.is_some() {
+            if simple_level.is_some() {
+                abort_call_site!("plain level cannot be specified with `some` or `none` levels");
+            }
+            Ok(Args::Option {
+                some_level,
+                none_level,
+                input_format,
+            })
         } else {
             Ok(Args::Simple {
-                level: simple_level.unwrap_or_else(|| "debug".to_string()),
+                level: simple_level.unwrap_or_else(|| "info".to_string()),
                 input_format,
             })
         }
@@ -236,121 +278,247 @@ fn gen_block(
         Args::Simple {
             level,
             input_format,
-        } => {
-            // Generate the instrumented function body.
-            // If the function is an `async fn`, this will wrap it in an async block.
-            if async_context {
-                let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
-                let log = gen_log(&level, "__input_string", "__ret_value");
-                let block = quote::quote_spanned!(block.span()=>
-                    #[allow(unknown_lints)]
-                    #[allow(clippy::useless_format)]
-                    let __input_string = format!(#input_format);
-                    #[allow(unknown_lints)]
-                    let __ret_value = async { #block }.await;
-                    #log;
-                    __ret_value
-                );
-
-                if async_keyword {
-                    block
-                } else {
-                    quote::quote_spanned!(block.span()=>
-                        async move {
-                            #block
-                        }
-                    )
-                }
-            } else {
-                let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
-                let log = gen_log(&level, "__input_string", "__ret_value");
-                quote::quote_spanned!(block.span()=>
-                    #[allow(unknown_lints)]
-                    #[allow(clippy::useless_format)]
-                    let __input_string = format!(#input_format);
-                    #[allow(unknown_lints)]
-                    #[allow(clippy::redundant_closure_call)]
-                    #[allow(clippy::let_unit_value)]
-                    let __ret_value = (move || #block)();
-                    #log;
-                    __ret_value
-                )
-            }
-        }
+        } => gen_plain_label_block(
+            block,
+            async_context,
+            async_keyword,
+            sig,
+            &level,
+            input_format,
+        ),
         Args::Result {
             ok_level,
             err_level,
             input_format,
-        } => {
-            let ok_arm = if let Some(ok_level) = ok_level {
-                let log_ok = gen_log(&ok_level, "__input_string", "__ret_value");
-                quote::quote_spanned!(block.span()=>
-                    __ret_value@Ok(_) => {
-                        #log_ok;
-                        __ret_value
-                    }
-                )
-            } else {
-                quote::quote_spanned!(block.span()=>
-                    Ok(__ret_value) => Ok(__ret_value),
-                )
-            };
-            let err_arm = if let Some(err_level) = err_level {
-                let log_err = gen_log(&err_level, "__input_string", "__ret_value");
-                quote::quote_spanned!(block.span()=>
-                    __ret_value@Err(_) => {
-                        #log_err;
-                        __ret_value
-                    }
-                )
-            } else {
-                quote::quote_spanned!(block.span()=>
-                    Err(__ret_value) => Err(__ret_value),
-                )
-            };
+        } => gen_result_label_block(
+            block,
+            async_context,
+            async_keyword,
+            sig,
+            ok_level,
+            err_level,
+            input_format,
+        ),
+        Args::Option {
+            some_level,
+            none_level,
+            input_format,
+        } => gen_option_label_block(
+            block,
+            async_context,
+            async_keyword,
+            sig,
+            some_level,
+            none_level,
+            input_format,
+        ),
+    }
+}
 
-            // Generate the instrumented function body.
-            // If the function is an `async fn`, this will wrap it in an async block.
-            if async_context {
-                let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
-                let block = quote::quote_spanned!(block.span()=>
-                    #[allow(unknown_lints)]
-                    #[allow(clippy::useless_format)]
-                    let __input_string = format!(#input_format);
-                    #[allow(unknown_lints)]
-                    let __ret_value = async { #block }.await;
-                    match __ret_value {
-                        #ok_arm
-                        #err_arm
-                    }
-                );
+fn gen_plain_label_block(
+    block: &Block,
+    async_context: bool,
+    async_keyword: bool,
+    sig: &Signature,
+    level: &str,
+    input_format: Option<String>,
+) -> proc_macro2::TokenStream {
+    // Generate the instrumented function body.
+    // If the function is an `async fn`, this will wrap it in an async block.
+    if async_context {
+        let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
+        let log = gen_log(level, "__input_string", "__ret_value");
+        let block = quote::quote_spanned!(block.span()=>
+            #[allow(unknown_lints)]
+            #[allow(clippy::useless_format)]
+            let __input_string = format!(#input_format);
+            #[allow(unknown_lints)]
+            let __ret_value = async { #block }.await;
+            #log;
+            __ret_value
+        );
 
-                if async_keyword {
-                    block
-                } else {
-                    quote::quote_spanned!(block.span()=>
-                        async move {
-                            #block
-                        }
-                    )
+        if async_keyword {
+            block
+        } else {
+            quote::quote_spanned!(block.span()=>
+                async move {
+                    #block
                 }
-            } else {
-                let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
-                quote::quote_spanned!(block.span()=>
-                    #[allow(unknown_lints)]
-                    #[allow(clippy::useless_format)]
-                    let __input_string = format!(#input_format);
-                    #[allow(unknown_lints)]
-                    #[allow(clippy::redundant_closure_call)]
-                    #[allow(clippy::let_unit_value)]
-                    let __ret_value = (move || #block)();
-                    match __ret_value {
-                        #ok_arm
-                        #err_arm
-                    }
-                )
-            }
+            )
         }
+    } else {
+        let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
+        let log = gen_log(level, "__input_string", "__ret_value");
+        quote::quote_spanned!(block.span()=>
+            #[allow(unknown_lints)]
+            #[allow(clippy::useless_format)]
+            let __input_string = format!(#input_format);
+            #[allow(unknown_lints)]
+            #[allow(clippy::redundant_closure_call)]
+            #[allow(clippy::let_unit_value)]
+            let __ret_value = (move || #block)();
+            #log;
+            __ret_value
+        )
+    }
+}
+
+fn gen_result_label_block(
+    block: &Block,
+    async_context: bool,
+    async_keyword: bool,
+    sig: &Signature,
+    ok_level: Option<String>,
+    err_level: Option<String>,
+    input_format: Option<String>,
+) -> proc_macro2::TokenStream {
+    let ok_arm = if let Some(ok_level) = ok_level {
+        let log_ok = gen_log(&ok_level, "__input_string", "__ret_value");
+        quote::quote_spanned!(block.span()=>
+            __ret_value@Ok(_) => {
+                #log_ok;
+                __ret_value
+            }
+        )
+    } else {
+        quote::quote_spanned!(block.span()=>
+            Ok(__ret_value) => Ok(__ret_value),
+        )
+    };
+    let err_arm = if let Some(err_level) = err_level {
+        let log_err = gen_log(&err_level, "__input_string", "__ret_value");
+        quote::quote_spanned!(block.span()=>
+            __ret_value@Err(_) => {
+                #log_err;
+                __ret_value
+            }
+        )
+    } else {
+        quote::quote_spanned!(block.span()=>
+            Err(__ret_value) => Err(__ret_value),
+        )
+    };
+
+    // Generate the instrumented function body.
+    // If the function is an `async fn`, this will wrap it in an async block.
+    if async_context {
+        let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
+        let block = quote::quote_spanned!(block.span()=>
+            #[allow(unknown_lints)]
+            #[allow(clippy::useless_format)]
+            let __input_string = format!(#input_format);
+            #[allow(unknown_lints)]
+            let __ret_value = async { #block }.await;
+            match __ret_value {
+                #ok_arm
+                #err_arm
+            }
+        );
+
+        if async_keyword {
+            block
+        } else {
+            quote::quote_spanned!(block.span()=>
+                async move {
+                    #block
+                }
+            )
+        }
+    } else {
+        let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
+        quote::quote_spanned!(block.span()=>
+            #[allow(unknown_lints)]
+            #[allow(clippy::useless_format)]
+            let __input_string = format!(#input_format);
+            #[allow(unknown_lints)]
+            #[allow(clippy::redundant_closure_call)]
+            #[allow(clippy::let_unit_value)]
+            let __ret_value = (move || #block)();
+            match __ret_value {
+                #ok_arm
+                #err_arm
+            }
+        )
+    }
+}
+
+fn gen_option_label_block(
+    block: &Block,
+    async_context: bool,
+    async_keyword: bool,
+    sig: &Signature,
+    some_level: Option<String>,
+    none_level: Option<String>,
+    input_format: Option<String>,
+) -> proc_macro2::TokenStream {
+    let some_arm = if let Some(some_level) = some_level {
+        let log_some = gen_log(&some_level, "__input_string", "__ret_value");
+        quote::quote_spanned!(block.span()=>
+            __ret_value@Some(_) => {
+                #log_some;
+                __ret_value
+            }
+        )
+    } else {
+        quote::quote_spanned!(block.span()=>
+            Some(__ret_value) => Some(__ret_value),
+        )
+    };
+    let none_arm = if let Some(none_level) = none_level {
+        let log_none = gen_log(&none_level, "__input_string", "__ret_value");
+        quote::quote_spanned!(block.span()=>
+            None => {
+                #log_none;
+                None
+            }
+        )
+    } else {
+        quote::quote_spanned!(block.span()=>
+            None => None,
+        )
+    };
+
+    // Generate the instrumented function body.
+    // If the function is an `async fn`, this will wrap it in an async block.
+    if async_context {
+        let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
+        let block = quote::quote_spanned!(block.span()=>
+            #[allow(unknown_lints)]
+            #[allow(clippy::useless_format)]
+            let __input_string = format!(#input_format);
+            #[allow(unknown_lints)]
+            let __ret_value = async { #block }.await;
+            match __ret_value {
+                #some_arm
+                #none_arm
+            }
+        );
+
+        if async_keyword {
+            block
+        } else {
+            quote::quote_spanned!(block.span()=>
+                async move {
+                    #block
+                }
+            )
+        }
+    } else {
+        let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
+        quote::quote_spanned!(block.span()=>
+            #[allow(unknown_lints)]
+            #[allow(clippy::useless_format)]
+            let __input_string = format!(#input_format);
+            #[allow(unknown_lints)]
+            #[allow(clippy::redundant_closure_call)]
+            #[allow(clippy::let_unit_value)]
+            let __ret_value = (move || #block)();
+            match __ret_value {
+                #some_arm
+                #none_arm
+            }
+        )
     }
 }
 
