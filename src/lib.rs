@@ -410,6 +410,8 @@ fn gen_result_label_block(
             let __input_string = format!(#input_format);
             #[allow(unknown_lints)]
             let __ret_value = async { #block }.await;
+            #[allow(unknown_lints)]
+            #[allow(clippy::ignored_unit_patterns)]
             match __ret_value {
                 #ok_arm
                 #err_arm
@@ -435,6 +437,8 @@ fn gen_result_label_block(
             #[allow(clippy::redundant_closure_call)]
             #[allow(clippy::let_unit_value)]
             let __ret_value = (move || #block)();
+            #[allow(unknown_lints)]
+            #[allow(clippy::ignored_unit_patterns)]
             match __ret_value {
                 #ok_arm
                 #err_arm
@@ -489,6 +493,8 @@ fn gen_option_label_block(
             let __input_string = format!(#input_format);
             #[allow(unknown_lints)]
             let __ret_value = async { #block }.await;
+            #[allow(unknown_lints)]
+            #[allow(clippy::ignored_unit_patterns)]
             match __ret_value {
                 #some_arm
                 #none_arm
@@ -514,6 +520,8 @@ fn gen_option_label_block(
             #[allow(clippy::redundant_closure_call)]
             #[allow(clippy::let_unit_value)]
             let __ret_value = (move || #block)();
+            #[allow(unknown_lints)]
+            #[allow(clippy::ignored_unit_patterns)]
             match __ret_value {
                 #some_arm
                 #none_arm
