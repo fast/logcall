@@ -351,7 +351,7 @@ fn gen_plain_label_block(
     // If the function is an `async fn`, this will wrap it in an async block.
     if async_context {
         let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
-        let output_format = output_format.unwrap_or_else(|| gen_output_format());
+        let output_format = output_format.unwrap_or_else(gen_output_format);
         let log = gen_log(level, "__input_string", &output_format, "__ret_value");
         let block = quote::quote_spanned!(block.span()=>
             #[allow(unknown_lints)]
@@ -373,7 +373,7 @@ fn gen_plain_label_block(
         }
     } else {
         let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
-        let output_format = output_format.unwrap_or_else(|| gen_output_format());
+        let output_format = output_format.unwrap_or_else(gen_output_format);
         let log = gen_log(level, "__input_string", &output_format, "__ret_value");
         quote::quote_spanned!(block.span()=>
             #[allow(unknown_lints)]
