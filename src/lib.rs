@@ -598,11 +598,9 @@ fn gen_log(
 
 // fn(a: usize, b: usize) => "a = {a:?}, b = {b:?}"
 fn gen_input_format(sig: &Signature) -> String {
-    let mut input_format = String::new();
-    for (i, input) in sig.inputs.iter().enumerate() {
-        if i > 0 {
-            input_format.push_str(", ");
-        }
+    let mut args = vec![];
+
+    for input in &sig.inputs {
         match input {
             FnArg::Typed(PatType { pat, .. }) => {
                 if let Pat::Ident(pat_ident) = &**pat {
@@ -611,15 +609,16 @@ fn gen_input_format(sig: &Signature) -> String {
                     if ident.starts_with("__arg") {
                         continue;
                     }
-                    input_format.push_str(&format!("{ident} = {{{ident}:?}}"));
+                    args.push(format!("{ident} = {{{ident}:?}}"));
                 }
             }
             FnArg::Receiver(_) => {
-                input_format.push_str("self");
+                args.push("self".to_string());
             }
         }
     }
-    input_format
+
+    args.join(", ")
 }
 
 fn gen_output_format() -> String {
