@@ -606,7 +606,11 @@ fn gen_input_format(sig: &Signature) -> String {
         match input {
             FnArg::Typed(PatType { pat, .. }) => {
                 if let Pat::Ident(pat_ident) = &**pat {
-                    let ident = &pat_ident.ident;
+                    let ident = &pat_ident.ident.to_string();
+                    // Skip async-trait generated anonymous arguments
+                    if ident.starts_with("__arg") {
+                        continue;
+                    }
                     input_format.push_str(&format!("{ident} = {{{ident}:?}}"));
                 }
             }
