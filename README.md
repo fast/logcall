@@ -6,22 +6,22 @@
 [![CI Status](https://img.shields.io/github/actions/workflow/status/fast/logcall/ci.yml?style=flat-square&logo=github)](https://github.com/fast/logcall/actions)
 [![License](https://img.shields.io/crates/l/logcall?style=flat-square&logo=)](https://crates.io/crates/logcall)
 
-Logcall is a Rust procedural macro crate designed to automatically log function calls, their inputs, and their outputs. This macro facilitates debugging and monitoring by providing detailed logs of function executions with minimal boilerplate code.
+Logcall is a Rust procedural macro crate that automatically logs function calls, their inputs, and outputs. It keeps boilerplate low while making debugging and observability easy.
 
-This is a re-implementation of the [`log-derive`](https://crates.io/crates/log-derive) crate with [`async-trait`](https://crates.io/crates/async-trait) compatibility.
+This is a re-implementation of [`log-derive`](https://crates.io/crates/log-derive) with [`async-trait`](https://crates.io/crates/async-trait) compatibility.
 
 ## Installation
 
-Add `logcall` to your `Cargo.toml`:
+Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
 logcall = "0.1"
 ```
 
-## Usage
+## Quick Start
 
-Import the `logcall` crate and use the macro to annotate your functions:
+Annotate functions with `#[logcall]` and configure logging with `logforth`:
 
 ```rust
 use logcall::logcall;
@@ -66,6 +66,18 @@ fn subtract(a: i32, b: i32) -> i32 {
     a - b
 }
 
+/// Logs the function call with custom output logging format.
+#[logcall(output = ": {:?}")]
+fn negate(a: i32) -> i32 {
+    -a
+}
+
+/// Omits the return value from the log output.
+#[logcall(output = "")]
+fn ping(a: i32) -> i32 {
+    a
+}
+
 fn main() {
     logforth::builder()
         .dispatch(|d| {
@@ -79,41 +91,28 @@ fn main() {
     divide(2, 0).ok();
     divide2(2, 0).ok();
     subtract(3, 2);
+    negate(5);
+    ping(42);
 }
 ```
 
-### Log Output
+### Example Run
 
-When the `main` function runs, it initializes the logger and logs each function call as specified:
-
-```plaintext
-2024-12-22T07:02:59.787586+08:00[Asia/Shanghai] DEBUG main: main.rs:6 main::add(a = 2, b = 3) => 5
-2024-12-22T07:02:59.816839+08:00[Asia/Shanghai]  INFO main: main.rs:12 main::multiply(a = 2, b = 3) => 6
-2024-12-22T07:02:59.816929+08:00[Asia/Shanghai] ERROR main: main.rs:18 main::divide(a = 2, b = 0) => Err("Division by zero")
-2024-12-22T07:02:59.816957+08:00[Asia/Shanghai] ERROR main: main.rs:28 main::divide2(a = 2, b = 0) => Err("Division by zero")
-2024-12-22T07:02:59.816980+08:00[Asia/Shanghai] DEBUG main: main.rs:38 main::subtract(a = 3, ..) => 1
+```bash
+cargo run --example main
 ```
 
-## Customization
+Sample output (from 2025-12-11):
 
-- **Default Log Level**: If no log level is specified, `logcall` logs at the `debug` level:
-  ```rust,ignore
-  #[logcall]
-  ```
-- **Specify Log Level**: Use the macro parameters to specify log level:
-  ```rust,ignore
-  #[logcall("info")]
-- **Specify Log Levels for `Result`**: Use the `ok` and `err` parameters to specify log levels for `Ok` and `Err` variants:
-  ```rust,ignore
-  #[logcall(err = "error")]
-  #[logcall(ok = "info", err = "error")]
-  ```
-- **Customize Input Logging**: Use the `input` parameter to customize the input log format:
-  ```rust,ignore
-  #[logcall(input = "a = {a:?}, ..")]
-  #[logcall("info", input = "a = {a:?}, ..")]
-  #[logcall(ok = "info", err = "error", input = "a = {a:?}, ..")]
-  ```
+```plaintext
+2025-12-11T23:08:39.201289+08:00[Asia/Shanghai] DEBUG main: main.rs:6 main::add(a = 2, b = 3) => 5
+2025-12-11T23:08:39.211065+08:00[Asia/Shanghai]  INFO main: main.rs:12 main::multiply(a = 2, b = 3) => 6
+2025-12-11T23:08:39.211086+08:00[Asia/Shanghai] ERROR main: main.rs:18 main::divide(a = 2, b = 0) => Err("Division by zero")
+2025-12-11T23:08:39.211118+08:00[Asia/Shanghai] ERROR main: main.rs:28 main::divide2(a = 2, b = 0) => Err("Division by zero")
+2025-12-11T23:08:39.211148+08:00[Asia/Shanghai] DEBUG main: main.rs:38 main::subtract(a = 3, ..) => 1
+2025-12-11T23:08:39.211162+08:00[Asia/Shanghai] DEBUG main: main.rs:44 main::negate(a = 5): -5
+2025-12-11T23:08:39.211172+08:00[Asia/Shanghai] DEBUG main: main.rs:50 main::ping(a = 42)
+```
 
 ## Minimum Supported Rust Version (MSRV)
 

@@ -36,16 +36,19 @@ enum Args {
     Simple {
         level: String,
         input_format: Option<String>,
+        output_format: Option<String>,
     },
     Result {
         ok_level: Option<String>,
         err_level: Option<String>,
         input_format: Option<String>,
+        output_format: Option<String>,
     },
     Option {
         some_level: Option<String>,
         none_level: Option<String>,
         input_format: Option<String>,
+        output_format: Option<String>,
     },
 }
 
@@ -59,6 +62,7 @@ impl Parse for Args {
             some_level: Option<String>,
             none_level: Option<String>,
             input_format: Option<String>,
+            output_format: Option<String>,
         }
 
         impl Parse for ArgContext {
@@ -128,6 +132,15 @@ impl Parse for Args {
                                 }
                                 ctx.input_format = Some(level.value());
                             }
+                            "output" => {
+                                if ctx.output_format.is_some() {
+                                    return Err(syn::Error::new(
+                                        level.span(),
+                                        "output specified multiple times",
+                                    ));
+                                }
+                                ctx.output_format = Some(level.value());
+                            }
                             _ => {
                                 return Err(syn::Error::new(
                                     ident.span(),
@@ -154,6 +167,7 @@ impl Parse for Args {
             some_level,
             none_level,
             input_format,
+            output_format,
         } = input.parse::<ArgContext>()?;
 
         if ok_level.is_some() || err_level.is_some() {
@@ -169,6 +183,7 @@ impl Parse for Args {
                 ok_level,
                 err_level,
                 input_format,
+                output_format,
             })
         } else if some_level.is_some() || none_level.is_some() {
             if simple_level.is_some() {
@@ -178,11 +193,13 @@ impl Parse for Args {
                 some_level,
                 none_level,
                 input_format,
+                output_format,
             })
         } else {
             Ok(Args::Simple {
-                level: simple_level.unwrap_or_else(|| "info".to_string()),
+                level: simple_level.unwrap_or_else(|| "debug".to_string()),
                 input_format,
+                output_format,
             })
         }
     }
@@ -278,6 +295,7 @@ fn gen_block(
         Args::Simple {
             level,
             input_format,
+            output_format,
         } => gen_plain_label_block(
             block,
             async_context,
@@ -285,11 +303,13 @@ fn gen_block(
             sig,
             &level,
             input_format,
+            output_format,
         ),
         Args::Result {
             ok_level,
             err_level,
             input_format,
+            output_format,
         } => gen_result_label_block(
             block,
             async_context,
@@ -298,11 +318,13 @@ fn gen_block(
             ok_level,
             err_level,
             input_format,
+            output_format,
         ),
         Args::Option {
             some_level,
             none_level,
             input_format,
+            output_format,
         } => gen_option_label_block(
             block,
             async_context,
@@ -311,6 +333,7 @@ fn gen_block(
             some_level,
             none_level,
             input_format,
+            output_format,
         ),
     }
 }
@@ -322,12 +345,14 @@ fn gen_plain_label_block(
     sig: &Signature,
     level: &str,
     input_format: Option<String>,
+    output_format: Option<String>,
 ) -> proc_macro2::TokenStream {
     // Generate the instrumented function body.
     // If the function is an `async fn`, this will wrap it in an async block.
     if async_context {
         let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
-        let log = gen_log(level, "__input_string", "__ret_value");
+        let output_format = output_format.unwrap_or_else(|| gen_output_format());
+        let log = gen_log(level, "__input_string", &output_format, "__ret_value");
         let block = quote::quote_spanned!(block.span()=>
             #[allow(unknown_lints)]
             #[allow(clippy::useless_format)]
@@ -348,7 +373,8 @@ fn gen_plain_label_block(
         }
     } else {
         let input_format = input_format.unwrap_or_else(|| gen_input_format(sig));
-        let log = gen_log(level, "__input_string", "__ret_value");
+        let output_format = output_format.unwrap_or_else(|| gen_output_format());
+        let log = gen_log(level, "__input_string", &output_format, "__ret_value");
         quote::quote_spanned!(block.span()=>
             #[allow(unknown_lints)]
             #[allow(clippy::useless_format)]
@@ -363,6 +389,7 @@ fn gen_plain_label_block(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn gen_result_label_block(
     block: &Block,
     async_context: bool,
@@ -371,9 +398,11 @@ fn gen_result_label_block(
     ok_level: Option<String>,
     err_level: Option<String>,
     input_format: Option<String>,
+    output_format: Option<String>,
 ) -> proc_macro2::TokenStream {
+    let output_format = output_format.unwrap_or_else(gen_output_format);
     let ok_arm = if let Some(ok_level) = ok_level {
-        let log_ok = gen_log(&ok_level, "__input_string", "__ret_value");
+        let log_ok = gen_log(&ok_level, "__input_string", &output_format, "__ret_value");
         quote::quote_spanned!(block.span()=>
             __ret_value@Ok(_) => {
                 #log_ok;
@@ -386,7 +415,7 @@ fn gen_result_label_block(
         )
     };
     let err_arm = if let Some(err_level) = err_level {
-        let log_err = gen_log(&err_level, "__input_string", "__ret_value");
+        let log_err = gen_log(&err_level, "__input_string", &output_format, "__ret_value");
         quote::quote_spanned!(block.span()=>
             __ret_value@Err(_) => {
                 #log_err;
@@ -445,6 +474,7 @@ fn gen_result_label_block(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn gen_option_label_block(
     block: &Block,
     async_context: bool,
@@ -453,9 +483,11 @@ fn gen_option_label_block(
     some_level: Option<String>,
     none_level: Option<String>,
     input_format: Option<String>,
+    output_format: Option<String>,
 ) -> proc_macro2::TokenStream {
+    let output_format = output_format.unwrap_or_else(gen_output_format);
     let some_arm = if let Some(some_level) = some_level {
-        let log_some = gen_log(&some_level, "__input_string", "__ret_value");
+        let log_some = gen_log(&some_level, "__input_string", &output_format, "__ret_value");
         quote::quote_spanned!(block.span()=>
             __ret_value@Some(_) => {
                 #log_some;
@@ -468,7 +500,7 @@ fn gen_option_label_block(
         )
     };
     let none_arm = if let Some(none_level) = none_level {
-        let log_none = gen_log(&none_level, "__input_string", "__ret_value");
+        let log_none = gen_log(&none_level, "__input_string", &output_format, "__ret_value");
         quote::quote_spanned!(block.span()=>
             None => {
                 #log_none;
@@ -527,14 +559,17 @@ fn gen_option_label_block(
     }
 }
 
-fn gen_log(level: &str, input_string: &str, return_value: &str) -> proc_macro2::TokenStream {
+fn gen_log(
+    level: &str,
+    input_string: &str,
+    output_format: &str,
+    return_value: &str,
+) -> proc_macro2::TokenStream {
     let level = level.to_lowercase();
     if !["error", "warn", "info", "debug", "trace"].contains(&level.as_str()) {
         abort_call_site!("unknown log level");
     }
     let level: Ident = Ident::new(&level, Span::call_site());
-    let input_string: Ident = Ident::new(input_string, Span::call_site());
-    let return_value: Ident = Ident::new(return_value, Span::call_site());
     let fn_name = quote::quote! {
         {
             fn f() {}
@@ -546,9 +581,19 @@ fn gen_log(level: &str, input_string: &str, return_value: &str) -> proc_macro2::
             name.trim_end_matches("::{{closure}}")
         }
     };
-    quote::quote!(
-        log::#level! ("{}({}) => {:?}", #fn_name, #input_string, &#return_value)
-    )
+    let input_string: Ident = Ident::new(input_string, Span::call_site());
+    let format_string = format!("{{}}({{}}){output_format}");
+
+    if output_format.replace("{{", "").contains("{") {
+        let return_value: Ident = Ident::new(return_value, Span::call_site());
+        quote::quote!(
+            log::#level! (#format_string, #fn_name, #input_string, &#return_value)
+        )
+    } else {
+        quote::quote!(
+            log::#level! (#format_string, #fn_name, #input_string)
+        )
+    }
 }
 
 // fn(a: usize, b: usize) => "a = {a:?}, b = {b:?}"
@@ -571,6 +616,10 @@ fn gen_input_format(sig: &Signature) -> String {
         }
     }
     input_format
+}
+
+fn gen_output_format() -> String {
+    " => {:?}".to_string()
 }
 
 enum AsyncTraitKind<'a> {

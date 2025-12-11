@@ -40,6 +40,18 @@ fn subtract(a: i32, b: i32) -> i32 {
     a - b
 }
 
+/// Logs the function call with custom output logging format.
+#[logcall(output = ": {:?}")]
+fn negate(a: i32) -> i32 {
+    -a
+}
+
+/// Omits the return value from the log output.
+#[logcall(output = "")]
+fn ping(a: i32) -> i32 {
+    a
+}
+
 fn main() {
     logforth::builder()
         .dispatch(|d| {
@@ -53,4 +65,6 @@ fn main() {
     divide(2, 0).ok();
     divide2(2, 0).ok();
     subtract(3, 2);
+    negate(5);
+    ping(42);
 }
