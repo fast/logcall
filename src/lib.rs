@@ -598,24 +598,27 @@ fn gen_log(
 
 // fn(a: usize, b: usize) => "a = {a:?}, b = {b:?}"
 fn gen_input_format(sig: &Signature) -> String {
-    let mut input_format = String::new();
-    for (i, input) in sig.inputs.iter().enumerate() {
-        if i > 0 {
-            input_format.push_str(", ");
-        }
+    let mut args = vec![];
+
+    for input in &sig.inputs {
         match input {
             FnArg::Typed(PatType { pat, .. }) => {
                 if let Pat::Ident(pat_ident) = &**pat {
-                    let ident = &pat_ident.ident;
-                    input_format.push_str(&format!("{ident} = {{{ident}:?}}"));
+                    let ident = &pat_ident.ident.to_string();
+                    // Skip async-trait generated anonymous arguments.
+                    if ident.starts_with("__arg") {
+                        continue;
+                    }
+                    args.push(format!("{ident} = {{{ident}:?}}"));
                 }
             }
             FnArg::Receiver(_) => {
-                input_format.push_str("self");
+                args.push("self".to_string());
             }
         }
     }
-    input_format
+
+    args.join(", ")
 }
 
 fn gen_output_format() -> String {
