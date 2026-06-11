@@ -9,9 +9,6 @@
 // [1] https://github.com/tokio-rs/tracing/blob/6a61897a/tracing-attributes/src/expand.rs
 
 use proc_macro2::Span;
-use syn::parse::Parse;
-use syn::parse::ParseStream;
-use syn::spanned::Spanned;
 use syn::Block;
 use syn::Expr;
 use syn::ExprAsync;
@@ -28,6 +25,9 @@ use syn::Path;
 use syn::Signature;
 use syn::Stmt;
 use syn::Token;
+use syn::parse::Parse;
+use syn::parse::ParseStream;
+use syn::spanned::Spanned;
 
 #[derive(Debug)]
 enum Args {
@@ -143,7 +143,7 @@ impl Parse for Args {
                                 return Err(syn::Error::new(
                                     ident.span(),
                                     "unknown attribute argument",
-                                ))
+                                ));
                             }
                         }
                     } else {
