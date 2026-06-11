@@ -25,8 +25,7 @@ Annotate functions with `#[logcall]` and configure logging with `logforth`:
 
 ```rust
 use logcall::logcall;
-use logforth::append;
-use logforth::filter::EnvFilter;
+use logforth::record::LevelFilter;
 
 /// Logs the function call at the default `debug` level.
 #[logcall]
@@ -79,11 +78,8 @@ fn ping(a: i32) -> i32 {
 }
 
 fn main() {
-    logforth::builder()
-        .dispatch(|d| {
-            d.filter(EnvFilter::from_default_env_or("trace"))
-                .append(append::Stderr::default())
-        })
+    logforth::starter_log::stdout()
+        .filter(LevelFilter::All)
         .apply();
 
     add(2, 3);
@@ -102,21 +98,21 @@ fn main() {
 cargo run --example main
 ```
 
-Sample output (from 2025-12-11):
+Sample output:
 
 ```plaintext
-2025-12-11T23:08:39.201289+08:00[Asia/Shanghai] DEBUG main: main.rs:6 main::add(a = 2, b = 3) => 5
-2025-12-11T23:08:39.211065+08:00[Asia/Shanghai]  INFO main: main.rs:12 main::multiply(a = 2, b = 3) => 6
-2025-12-11T23:08:39.211086+08:00[Asia/Shanghai] ERROR main: main.rs:18 main::divide(a = 2, b = 0) => Err("Division by zero")
-2025-12-11T23:08:39.211118+08:00[Asia/Shanghai] ERROR main: main.rs:28 main::divide2(a = 2, b = 0) => Err("Division by zero")
-2025-12-11T23:08:39.211148+08:00[Asia/Shanghai] DEBUG main: main.rs:38 main::subtract(a = 3, ..) => 1
-2025-12-11T23:08:39.211162+08:00[Asia/Shanghai] DEBUG main: main.rs:44 main::negate(a = 5): -5
-2025-12-11T23:08:39.211172+08:00[Asia/Shanghai] DEBUG main: main.rs:50 main::ping(a = 42)
+2026-06-11T15:06:32.853867+08:00  DEBUG main: main.rs:5 main::add(a = 2, b = 3) => 5
+2026-06-11T15:06:32.853920+08:00   INFO main: main.rs:11 main::multiply(a = 2, b = 3) => 6
+2026-06-11T15:06:32.853928+08:00  ERROR main: main.rs:17 main::divide(a = 2, b = 0) => Err("Division by zero")
+2026-06-11T15:06:32.853934+08:00  ERROR main: main.rs:27 main::divide2(a = 2, b = 0) => Err("divide by zero")
+2026-06-11T15:06:32.853939+08:00  DEBUG main: main.rs:33 main::subtract(a = 3, ..) => 1
+2026-06-11T15:06:32.853943+08:00  DEBUG main: main.rs:39 main::negate(a = 5): -5
+2026-06-11T15:06:32.853947+08:00  DEBUG main: main.rs:45 main::ping(a = 42)
 ```
 
 ## Minimum Supported Rust Version (MSRV)
 
-This crate is built against the latest stable release, and its minimum supported rustc version is 1.80.0.
+This crate is built against the latest stable release, and its minimum supported rustc version is 1.91.0.
 
 The policy is that the minimum Rust version required to use this crate can be increased in minor version updates. For example, if Logcall 1.0 requires Rust 1.20.0, then Logcall 1.0.z for all values of z will also require Rust 1.20.0 or newer. However, Logcall 1.y for y > 0 may require a newer minimum version of Rust.
 

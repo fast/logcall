@@ -9,11 +9,6 @@
 // [1] https://github.com/tokio-rs/tracing/blob/6a61897a/tracing-attributes/src/expand.rs
 
 use proc_macro2::Span;
-use proc_macro_error2::abort_call_site;
-use proc_macro_error2::proc_macro_error;
-use syn::parse::Parse;
-use syn::parse::ParseStream;
-use syn::spanned::Spanned;
 use syn::Block;
 use syn::Expr;
 use syn::ExprAsync;
@@ -30,6 +25,9 @@ use syn::Path;
 use syn::Signature;
 use syn::Stmt;
 use syn::Token;
+use syn::parse::Parse;
+use syn::parse::ParseStream;
+use syn::spanned::Spanned;
 
 #[derive(Debug)]
 enum Args {
@@ -145,7 +143,7 @@ impl Parse for Args {
                                 return Err(syn::Error::new(
                                     ident.span(),
                                     "unknown attribute argument",
-                                ))
+                                ));
                             }
                         }
                     } else {
@@ -172,12 +170,16 @@ impl Parse for Args {
 
         if ok_level.is_some() || err_level.is_some() {
             if simple_level.is_some() {
-                abort_call_site!("plain level cannot be specified with `ok` or `err` levels");
+                return Err(syn::Error::new(
+                    Span::call_site(),
+                    "plain level cannot be specified with `ok` or `err` levels",
+                ));
             }
             if some_level.is_some() || none_level.is_some() {
-                abort_call_site!(
-                    "`some` and `none` levels cannot be specified with `ok` or `err` levels"
-                );
+                return Err(syn::Error::new(
+                    Span::call_site(),
+                    "`some` and `none` levels cannot be specified with `ok` or `err` levels",
+                ));
             }
             Ok(Args::Result {
                 ok_level,
@@ -187,7 +189,10 @@ impl Parse for Args {
             })
         } else if some_level.is_some() || none_level.is_some() {
             if simple_level.is_some() {
-                abort_call_site!("plain level cannot be specified with `some` or `none` levels");
+                return Err(syn::Error::new(
+                    Span::call_site(),
+                    "plain level cannot be specified with `some` or `none` levels",
+                ));
             }
             Ok(Args::Option {
                 some_level,
@@ -207,7 +212,6 @@ impl Parse for Args {
 
 /// `logcall` attribute macro that logs the function inputs and return values.
 #[proc_macro_attribute]
-#[proc_macro_error]
 pub fn logcall(
     args: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
@@ -567,7 +571,7 @@ fn gen_log(
 ) -> proc_macro2::TokenStream {
     let level = level.to_lowercase();
     if !["error", "warn", "info", "debug", "trace"].contains(&level.as_str()) {
-        abort_call_site!("unknown log level");
+        return syn::Error::new(Span::call_site(), "unknown log level").into_compile_error();
     }
     let level: Ident = Ident::new(&level, Span::call_site());
     let fn_name = quote::quote! {

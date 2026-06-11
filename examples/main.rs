@@ -1,6 +1,5 @@
 use logcall::logcall;
-use logforth::append;
-use logforth::filter::EnvFilter;
+use logforth::record::LevelFilter;
 
 /// Logs the function call at the default `debug` level.
 #[logcall]
@@ -27,11 +26,7 @@ fn divide(a: i32, b: i32) -> Result<i32, String> {
 /// Logs errors at the `error` level. No log output for `Ok` variant.
 #[logcall(err = "error")]
 fn divide2(a: usize, b: usize) -> Result<usize, String> {
-    if b == 0 {
-        Err("Division by zero".to_string())
-    } else {
-        Ok(a / b)
-    }
+    a.checked_div(b).ok_or("divide by zero".into())
 }
 
 /// Logs the function call with custom input logging format.
@@ -53,11 +48,8 @@ fn ping(a: i32) -> i32 {
 }
 
 fn main() {
-    logforth::builder()
-        .dispatch(|d| {
-            d.filter(EnvFilter::from_default_env_or("trace"))
-                .append(append::Stderr::default())
-        })
+    logforth::starter_log::stdout()
+        .filter(LevelFilter::All)
         .apply();
 
     add(2, 3);
