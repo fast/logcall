@@ -1,6 +1,5 @@
 use logcall::logcall;
-use logforth::append;
-use logforth::filter::EnvFilter;
+use logforth::record::LevelFilter;
 
 /// Logs the function call at the default `debug` level.
 #[logcall]
@@ -53,11 +52,8 @@ fn ping(a: i32) -> i32 {
 }
 
 fn main() {
-    logforth::builder()
-        .dispatch(|d| {
-            d.filter(EnvFilter::from_default_env_or("trace"))
-                .append(append::Stderr::default())
-        })
+    logforth::starter_log::stdout()
+        .filter(LevelFilter::All)
         .apply();
 
     add(2, 3);
