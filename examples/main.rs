@@ -29,6 +29,12 @@ fn divide2(a: usize, b: usize) -> Result<usize, String> {
     a.checked_div(b).ok_or("divide by zero".into())
 }
 
+/// Logs `Some` values at the `info` level and `None` values at the `warn` level.
+#[logcall(some = "info", none = "warn")]
+fn find_even(value: i32) -> Option<i32> {
+    (value % 2 == 0).then_some(value)
+}
+
 /// Logs the function call with custom input logging format.
 #[logcall(input = "a = {a:?}, ..")]
 fn subtract(a: i32, b: i32) -> i32 {
@@ -56,6 +62,8 @@ fn main() {
     multiply(2, 3);
     divide(2, 0).ok();
     divide2(2, 0).ok();
+    find_even(4);
+    find_even(3);
     subtract(3, 2);
     negate(5);
     ping(42);
