@@ -2,35 +2,35 @@ name: Rust
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   check:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v4
-    - name: Install toolchain
-      uses: dtolnay/rust-toolchain@nightly
-      with:
-        components: rustfmt,clippy
-    - uses: Swatinem/rust-cache@v2
-    - name: Check clippy
-      run: cargo +nightly clippy --all-targets --all-features -- -D warnings
-    - name: Check format
-      run: cargo +nightly fmt --all -- --check
+      - uses: actions/checkout@v6
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt,clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check clippy
+        run: cargo +nightly clippy --all-targets --all-features -- -D warnings
+      - name: Check format
+        run: cargo +nightly fmt --all -- --check
 
   test:
     strategy:
       matrix:
-        rust-version: [ "1.91.0", "stable" ]
-    runs-on: ubuntu-22.04
+        rust-version: ["1.91.0", "stable"]
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
       - name: Delete rust-toolchain.toml
         run: rm rust-toolchain.toml
@@ -47,7 +47,7 @@ jobs:
 
   required:
     name: Required
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: ${{ always() }}
     needs:
       - check
