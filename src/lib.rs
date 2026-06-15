@@ -1,10 +1,10 @@
 #![doc = include_str!("../README.md")]
 
-// Instrumenting the async fn is not as straight forward as expected because `async_trait`
+// Instrumenting async fn is not as straightforward as expected because `async_trait`
 // rewrites `async fn` into a normal fn which returns `Box<impl Future>`, and this stops
 // the macro from distinguishing `async fn` from `fn`.
 //
-// The following code reused the `async_trait` probes from tokio-tracing [1].
+// The async_trait probes follow tokio-tracing [1].
 //
 // [1] https://github.com/tokio-rs/tracing/blob/6a61897a/tracing-attributes/src/expand.rs
 
@@ -210,7 +210,20 @@ impl Parse for Args {
     }
 }
 
-/// `logcall` attribute macro that logs the function inputs and return values.
+/// Logs function inputs and return values through the `log` facade.
+///
+/// The generated log message includes the function path, input values, and
+/// return value by default. Generated input and output formatting uses `Debug`.
+///
+/// Supported forms:
+///
+/// - `#[logcall]` logs at `debug`.
+/// - `#[logcall("info")]` logs at a fixed level.
+/// - `#[logcall(ok = "info", err = "error")]` logs `Result` variants separately.
+/// - `#[logcall(some = "info", none = "warn")]` logs `Option` variants separately.
+/// - `#[logcall(input = "...", output = "...")]` customizes message formatting.
+///
+/// See the crate-level documentation for runnable examples.
 #[proc_macro_attribute]
 pub fn logcall(
     args: proc_macro::TokenStream,
@@ -630,14 +643,14 @@ fn gen_output_format() -> String {
 }
 
 enum AsyncTraitKind<'a> {
-    // old construction. Contains the function
+    // Older construction. Contains the function.
     Function,
-    // new construction. Contains a reference to the async block
+    // Current construction. Contains a reference to the async block.
     Async(&'a ExprAsync),
 }
 
 struct AsyncTraitInfo<'a> {
-    // statement that must be patched
+    // Statement that must be patched.
     _source_stmt: &'a Stmt,
     kind: AsyncTraitKind<'a>,
 }
@@ -652,19 +665,19 @@ struct AsyncTraitInfo<'a> {
 // Depending on the version of async-trait, we inspect the block of the function
 // to find if it matches the pattern
 // `async fn foo<...>(...) {...}; Box::pin(foo<...>(...))` (<=0.1.43), or if
-// it matches `Box::pin(async move { ... }) (>=0.1.44). We the return the
+// it matches `Box::pin(async move { ... }) (>=0.1.44). We then return the
 // statement that must be instrumented, along with some other information.
-// 'gen_body' will then be able to use that information to instrument the
+// `gen_block` then uses that information to instrument the
 // proper function/future.
 // (this follows the approach suggested in
 // https://github.com/dtolnay/async-trait/issues/45#issuecomment-571245673)
 fn get_async_trait_info(block: &Block, block_is_async: bool) -> Option<AsyncTraitInfo<'_>> {
-    // are we in an async context? If yes, this isn't an async_trait-like pattern
+    // Are we in an async context? If yes, this isn't an async_trait-like pattern.
     if block_is_async {
         return None;
     }
 
-    // list of async functions declared inside the block
+    // List of async functions declared inside the block.
     let inside_fns = block.stmts.iter().filter_map(|stmt| {
         if let Stmt::Item(Item::Fn(fun)) = &stmt {
             // If the function is async, this is a candidate
@@ -675,10 +688,10 @@ fn get_async_trait_info(block: &Block, block_is_async: bool) -> Option<AsyncTrai
         None
     });
 
-    // last expression of the block (it determines the return value
+    // Last expression of the block. It determines the return value
     // of the block, so that if we are working on a function whose
     // `trait` or `impl` declaration is annotated by async_trait,
-    // this is quite likely the point where the future is pinned)
+    // this is likely the point where the future is pinned.
     let (last_expr_stmt, last_expr) = block.stmts.iter().rev().find_map(|stmt| {
         if let Stmt::Expr(expr, ..) = stmt {
             Some((stmt, expr))
@@ -687,13 +700,13 @@ fn get_async_trait_info(block: &Block, block_is_async: bool) -> Option<AsyncTrai
         }
     })?;
 
-    // is the last expression a function call?
+    // Is the last expression a function call?
     let (outside_func, outside_args) = match last_expr {
         Expr::Call(ExprCall { func, args, .. }) => (func, args),
         _ => return None,
     };
 
-    // is it a call to `Box::pin()`?
+    // Is it a call to `Box::pin()`?
     let path = match outside_func.as_ref() {
         Expr::Path(path) => &path.path,
         _ => return None,
@@ -712,7 +725,7 @@ fn get_async_trait_info(block: &Block, block_is_async: bool) -> Option<AsyncTrai
     // Is the argument to Box::pin an async block that
     // captures its arguments?
     if let Expr::Async(async_expr) = &outside_args[0] {
-        // check that the move 'keyword' is present
+        // Check that the `move` keyword is present.
         async_expr.capture?;
 
         return Some(AsyncTraitInfo {
@@ -727,7 +740,7 @@ fn get_async_trait_info(block: &Block, block_is_async: bool) -> Option<AsyncTrai
         _ => return None,
     };
 
-    // "stringify" the path of the function called
+    // Stringify the path of the called function.
     let func_name = match **func {
         Expr::Path(ref func_path) => path_to_string(&func_path.path),
         _ => return None,
