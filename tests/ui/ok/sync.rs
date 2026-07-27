@@ -33,6 +33,11 @@ fn l(a: u32) -> Option<u32> {
     Some(a)
 }
 
+#[logcall::logcall]
+unsafe fn m(a: u32) -> u32 {
+    a
+}
+
 fn main() {
     f(1);
     g(1).ok();
@@ -41,4 +46,7 @@ fn main() {
     j(1).unwrap();
     k(1).unwrap();
     l(1).unwrap();
+    unsafe {
+        m(1);
+    }
 }

@@ -275,7 +275,7 @@ pub fn logcall(
     let Signature {
         output: return_type,
         inputs: params,
-        unsafety,
+        safety,
         constness,
         abi,
         ident,
@@ -291,7 +291,7 @@ pub fn logcall(
 
     quote::quote_spanned!(input.span()=>
         #(#attrs) *
-        #vis #constness #unsafety #asyncness #abi fn #ident<#gen_params>(#params) #return_type
+        #vis #constness #asyncness #safety #abi fn #ident<#gen_params>(#params) #return_type
         #where_clause
         {
             #func_body
