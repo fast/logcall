@@ -28,8 +28,8 @@ syn = { version = "3", features = [
 [dev-dependencies]
 async-trait = { version = "0.1" }
 fastrace = { version = "0.7" }
-log = { version = "0.4.32" }
+log = { version = "0.4.33" }
 logforth = { version = "0.30.1", features = ["starter-log"] }
-pollster = { version = "0.4" }
+pollster = { version = "1" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 trybuild = { version = "1" }
