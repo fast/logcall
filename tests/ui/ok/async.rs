@@ -33,6 +33,11 @@ async fn l(a: u32) -> Option<u32> {
     Some(a)
 }
 
+#[logcall::logcall]
+async unsafe fn m(a: u32) -> u32 {
+    a
+}
+
 #[tokio::main]
 async fn main() {
     f(1).await;
@@ -42,4 +47,7 @@ async fn main() {
     j(1).await.unwrap();
     k(1).await.unwrap();
     l(1).await.unwrap();
+    unsafe {
+        m(1).await;
+    }
 }
